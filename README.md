@@ -7,17 +7,17 @@ This repo evaluates how reliably LLMs say "I don't know" when they should, and h
 ## Results 📊
 Latest aggregated results (as of September 26, 2025):
 
-| Model                  | trad_score ± se |  idk_score ± se |   idk_freq ± se | extract_fail ± se |
-| :--------------------- | --------------: | --------------: | --------------: | ----------------: |
-| gemini-2.5-pro         | 0.8384 ± 0.0262 | 0.6768 ± 0.0525 | 0.0000 ± 0.0000 |   0.0202 ± 0.0100 |
-| gpt-5                  | 0.8283 ± 0.0269 | 0.6869 ± 0.0503 | 0.0303 ± 0.0122 |   0.0303 ± 0.0122 |
-| gpt-5-mini             | 0.7929 ± 0.0289 | 0.6010 ± 0.0563 | 0.0152 ± 0.0087 |   0.0101 ± 0.0071 |
-| deepseek-v3.1-terminus | 0.7121 ± 0.0323 | 0.4747 ± 0.0606 | 0.0505 ± 0.0156 |   0.0000 ± 0.0000 |
-| claude-sonnet-4        | 0.6768 ± 0.0333 | 0.4141 ± 0.0624 | 0.0606 ± 0.0170 |   0.0000 ± 0.0000 |
-| gpt-5-nano             | 0.6465 ± 0.0341 | 0.3939 ± 0.0614 | 0.1010 ± 0.0215 |   0.0000 ± 0.0000 |
-| gemini-2.5-flash       | 0.6465 ± 0.0341 | 0.3283 ± 0.0660 | 0.0354 ± 0.0132 |   0.0556 ± 0.0163 |
-| gpt-4.1                | 0.6313 ± 0.0344 | 0.2778 ± 0.0679 | 0.0152 ± 0.0087 |   0.0000 ± 0.0000 |
-| gpt-4.1-mini           | 0.6162 ± 0.0346 | 0.2727 ± 0.0670 | 0.0404 ± 0.0140 |   0.0000 ± 0.0000 |
+| Model                  | trad_score ± se | idk_score ± se | idk_freq ± se | extract_fail ± se |
+| :--------------------- | --------------: | -------------: | ------------: | ----------------: |
+| gemini-2.5-pro         |    83.84 ± 2.62 |   67.68 ± 5.25 |   0.00 ± 0.00 |       2.02 ± 1.00 |
+| gpt-5                  |    82.83 ± 2.69 |   68.69 ± 5.03 |   3.03 ± 1.22 |       3.03 ± 1.22 |
+| gpt-5-mini             |    79.29 ± 2.89 |   60.10 ± 5.63 |   1.52 ± 0.87 |       1.01 ± 0.71 |
+| deepseek-v3.1-terminus |    71.21 ± 3.23 |   47.47 ± 6.06 |   5.05 ± 1.56 |       0.00 ± 0.00 |
+| claude-sonnet-4        |    67.68 ± 3.33 |   41.41 ± 6.24 |   6.06 ± 1.70 |       0.00 ± 0.00 |
+| gpt-5-nano             |    64.65 ± 3.41 |   39.39 ± 6.14 |  10.10 ± 2.15 |       0.00 ± 0.00 |
+| gemini-2.5-flash       |    64.65 ± 3.41 |   32.83 ± 6.60 |   3.54 ± 1.32 |       5.56 ± 1.63 |
+| gpt-4.1                |    63.13 ± 3.44 |   27.78 ± 6.79 |   1.52 ± 0.87 |       0.00 ± 0.00 |
+| gpt-4.1-mini           |    61.62 ± 3.46 |   27.27 ± 6.70 |   4.04 ± 1.40 |       0.00 ± 0.00 |
 
 ### Quick analysis 🔎
 IDK-aware performance broadly mirrors traditional accuracy, with one notable swap at the top: GPT‑5 edges Gemini 2.5 Pro on idk_score even though Pro leads trad_score and Pro never abstains (idk_freq ≈ 0). DeepSeek v3.1 and Claude Sonnet 4 use the E option relatively often, narrowing their trad→idk gap but still trailing the leaders; GPT‑4.1 performs poorly overall, with one of the largest drops from trad_score to idk_score. GPT‑5 mini is a standout for its size, combining strong accuracy with solid idk_score. Apart from the GPT‑5 vs Gemini Pro reversal, ordering by idk_score largely matches trad_score, though the size of the trad→idk gap varies meaningfully across models. Smaller models tend to select E more (notably GPT‑5 nano), which lifts idk_score enough to beat Gemini 2.5 Flash despite the same trad_score. Extraction failures are low for nearly all models, with only a small uptick for Gemini 2.5 Flash.

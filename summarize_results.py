@@ -89,7 +89,9 @@ header = ["Model", "trad_score ± se", "idk_score ± se", "idk_freq ± se", "ext
 
 def fmt_val_se(v, se):
     def fmt_num(n):
-        return f"{n:.4f}" if isinstance(n, (int, float)) else None
+        if isinstance(n, (int, float)):
+            return f"{n*100:.2f}"
+        return None
 
     v_str = fmt_num(v)
     if v_str is None:
