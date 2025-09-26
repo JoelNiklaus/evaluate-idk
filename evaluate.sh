@@ -8,6 +8,9 @@ export EVALUATE_IDK_LOG_LEVEL=DEBUG
 export LITELLM_LOG=DEBUG
 
 MODEL_NAMES=(
+  "openai/gpt-5"
+  "openai/gpt-5-mini"
+  "openai/gpt-5-nano"
   "openai/gpt-4.1"
   "openai/gpt-4.1-mini"
   "google/gemini-2.5-pro" 
