@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evaluate-idk"
+version = "0.1.0"
+description = "Evaluates to what extent LLMs signal correctly that they don't know the answer to a question"
+requires-python = ">=3.10"
+dependencies = [
+    "lighteval[litellm,extended_tasks,multilingual,math]",
+    "emoji",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8",
+]
