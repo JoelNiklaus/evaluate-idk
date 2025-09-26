@@ -8,10 +8,14 @@ export EVALUATE_IDK_LOG_LEVEL=DEBUG
 export LITELLM_LOG=DEBUG
 
 MODEL_NAMES=(
-  #"openai/gpt-4.1-mini"
+  "openai/gpt-4.1"
+  "openai/gpt-4.1-mini"
   "google/gemini-2.5-pro" 
-  #"deepseek/deepseek-v3.1-terminus"
-  #"moonshotai/kimi-k2-0905"
+  "google/gemini-2.5-flash" 
+  "anthropic/claude-sonnet-4"
+  "deepseek/deepseek-v3.1-terminus"
+  #"qwen/qwen3-next-80b-a3b-thinking" # somehow not working
+  #"moonshotai/kimi-k2-0905" # currently rate limited
 )
 
 for MODEL_NAME in "${MODEL_NAMES[@]}"; do
@@ -20,7 +24,6 @@ for MODEL_NAME in "${MODEL_NAMES[@]}"; do
     "community|gpqa-diamond-idk|0" \
     --custom-tasks gpqa_diamond_idk.py \
     --dataset-loading-processes 1 \
-    --save-details # --max-samples 3
+    --save-details #--max-samples 10
 done
-
 
