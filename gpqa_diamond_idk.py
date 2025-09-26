@@ -198,7 +198,7 @@ task = LightevalTaskConfig(
     few_shots_split=None,
     few_shots_select=None,
     metrics=[traditional_score_metric, idk_score_metric, idk_percent_metric],
-    generation_size=8192,
+    generation_size=32768,
     stop_sequence=["\n"],
 )
 

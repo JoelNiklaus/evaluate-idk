@@ -16,11 +16,11 @@ MODEL_NAMES=(
 
 for MODEL_NAME in "${MODEL_NAMES[@]}"; do
   lighteval endpoint litellm \
-    "provider=openrouter,model_name=openrouter/$MODEL_NAME,concurrent_requests=1,api_key=$OPENROUTER_API_KEY" \
+    "provider=openrouter,model_name=openrouter/$MODEL_NAME,concurrent_requests=10,api_key=$OPENROUTER_API_KEY" \
     "community|gpqa-diamond-idk|0" \
     --custom-tasks gpqa_diamond_idk.py \
     --dataset-loading-processes 1 \
-    --save-details
+    --save-details # --max-samples 3
 done
-#  --max-samples 100 \
+
 
