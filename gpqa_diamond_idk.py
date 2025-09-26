@@ -101,9 +101,16 @@ def extract_letter_fallback(pred: str) -> str | None:
         return None
 
     # 1) LaTeX boxed forms anywhere in the output
-    #    Accept variants: $\boxed{E}$, \boxed{E}, boxed(E), boxed{E}
+    #    Accept variants: $\boxed{E}$, \boxed{E}, boxed(E), boxed{E}, and $\boxed{\text{E}}$
     boxed_patterns = [
+        # \boxed{E} with optional surrounding $ ... $
         r"\$?\\boxed\s*\{\s*([A-E])\s*\}\$?",
+        # \boxed{\text{E}} with optional spaces and optional surrounding $ ... $
+        r"\$?\\boxed\s*\{\s*\\text\s*\{\s*([A-E])\s*\}\s*\}\$?",
+        # \boxed{\mathrm{E}} and \boxed{\mathbf{E}} common variants
+        r"\$?\\boxed\s*\{\s*\\mathrm\s*\{\s*([A-E])\s*\}\s*\}\$?",
+        r"\$?\\boxed\s*\{\s*\\mathbf\s*\{\s*([A-E])\s*\}\s*\}\$?",
+        # plain 'boxed(E)' or 'boxed{E}' without backslash
         r"\bboxed\s*\(\s*([A-E])\s*\)",
         r"\bboxed\s*\{\s*([A-E])\s*\}",
     ]
@@ -138,6 +145,7 @@ class ExtractiveLetterIdkGrouped(SampleLevelComputation):
     - trad_score: 1 if correct (A-D), else 0 (including E)
     - idk_score: +1 correct (A-D), 0 if E, -1 otherwise
     - idk_freq: 1 if E, else 0
+    - extract_fail: 1 if no extraction succeeded for any prediction, else 0
     """
 
     def __init__(
@@ -217,35 +225,37 @@ class ExtractiveLetterIdkGrouped(SampleLevelComputation):
 
         correct_letter = doc.choices[doc.gold_index] if 0 <= doc.gold_index < len(doc.choices) else None
 
-        def score_for_one_prediction_group(preds_for_one_text: list[str]) -> tuple[int, int, int]:
+        def score_for_one_prediction_group(preds_for_one_text: list[str]) -> tuple[int, int, int, int]:
             if len(preds_for_one_text) == 0:
-                return 0, -1, 0
+                return 0, -1, 0, 1
             scores = [self._score_letter(p, correct_letter, doc.choices) for p in preds_for_one_text]
             idk_flags = [1 if p == "E" else 0 for p in preds_for_one_text if isinstance(p, str)]
             trad_scores = [1 if (isinstance(p, str) and p == correct_letter) else 0 for p in preds_for_one_text]
-            return max(trad_scores), max(scores), max(idk_flags) if idk_flags else 0
+            return max(trad_scores), max(scores), max(idk_flags) if idk_flags else 0, 0
 
         per_prediction = [score_for_one_prediction_group(preds) for preds in extracted_predictions]
         if len(per_prediction) == 0:
-            return {"trad_score": 0.0, "idk_score": -1.0, "idk_freq": 0.0}
+            return {"trad_score": 0.0, "idk_score": -1.0, "idk_freq": 0.0, "extract_fail": 1.0}
 
-        trad_scores = [t for t, _, _ in per_prediction]
-        idk_scores = [s for _, s, _ in per_prediction]
-        idk_flags = [f for _, _, f in per_prediction]
+        trad_scores = [t for t, _, _, _ in per_prediction]
+        idk_scores = [s for _, s, _, _ in per_prediction]
+        idk_flags = [f for _, _, f, _ in per_prediction]
+        extract_fail_flags = [ef for _, _, _, ef in per_prediction]
 
         return {
             "trad_score": float(self.aggregation_function(trad_scores)),
             "idk_score": float(self.aggregation_function(idk_scores)),
             "idk_freq": float(max(idk_flags)),
+            "extract_fail": float(1 if all(flag == 1 for flag in extract_fail_flags) else 0),
         }
 
 
 idk_grouped_metrics = SampleLevelMetricGrouping(
-    metric_name=["trad_score", "idk_score", "idk_freq"],
+    metric_name=["trad_score", "idk_score", "idk_freq", "extract_fail"],
     sample_level_fn=ExtractiveLetterIdkGrouped(),
     category=SamplingMethod.GENERATIVE,
-    corpus_level_fn={"trad_score": np.mean, "idk_score": np.mean, "idk_freq": np.mean},
-    higher_is_better={"trad_score": True, "idk_score": True, "idk_freq": False},
+    corpus_level_fn={"trad_score": np.mean, "idk_score": np.mean, "idk_freq": np.mean, "extract_fail": np.mean},
+    higher_is_better={"trad_score": True, "idk_score": True, "idk_freq": False, "extract_fail": False},
 )
 
 
@@ -267,7 +277,6 @@ task = LightevalTaskConfig(
     generation_size=32768,
     stop_sequence=["\n"],
 )
-
 
 # Export table for discovery
 TASKS_TABLE = [task]
