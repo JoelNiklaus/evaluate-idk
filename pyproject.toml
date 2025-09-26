@@ -12,6 +12,7 @@ dependencies = [
     "emoji",
     "python-dotenv",
     "litellm[caching]",
+    "matplotlib",
 ]
 
 [project.optional-dependencies]
