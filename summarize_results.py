@@ -174,8 +174,8 @@ if plt is not None:
     desired_models = {
         "gemini-2.5-pro": "Gemini 2.5 Pro",
         "gpt-5": "GPT-5",
-        "gpt-5-mini": "GPT-5 Mini",
         "gpt-5-nano": "GPT-5 Nano",
+        "gemini-2.5-flash": "Gemini 2.5 Flash",
         "gpt-4.1": "GPT-4.1",
     }
 
@@ -203,7 +203,7 @@ if plt is not None:
             }
 
     # Keep only present models, preserving a preferred order
-    ordered_keys = [k for k in ["gemini-2.5-pro", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1"] if latest_by_model.get(k) is not None]
+    ordered_keys = [k for k in ["gemini-2.5-pro", "gpt-5", "gpt-5-nano", "gemini-2.5-flash", "gpt-4.1"] if latest_by_model.get(k) is not None]
     if ordered_keys:
         x_labels = [desired_models[k] for k in ordered_keys]
         trad_vals = [latest_by_model[k]["trad"] * 100 if latest_by_model[k]["trad"] is not None else None for k in ordered_keys]
