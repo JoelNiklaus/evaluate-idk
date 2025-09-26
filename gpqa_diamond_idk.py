@@ -2,17 +2,24 @@ from __future__ import annotations
 
 import random
 import numpy as np
+import os
+import logging
+import re
+
 from dotenv import load_dotenv
-from lighteval.metrics.utils.metric_utils import SampleLevelMetric
+from lighteval.metrics.utils.metric_utils import SampleLevelMetricGrouping
 from lighteval.metrics.metrics_sample import SampleLevelComputation
 from lighteval.tasks.default_prompts import LETTER_INDICES
 from lighteval.tasks.lighteval_task import LightevalTaskConfig
 from lighteval.tasks.requests import Doc
 from lighteval.tasks.requests import SamplingMethod
+from lighteval.metrics.utils.extractive_match_utils import (
+    IndicesExtractionConfig,
+    get_extraction_regexes,
+    extract_target_from_pred,
+)
+from lighteval.utils.language import Language
 
-import os
-import logging
-import re
 
 logging.basicConfig(level=os.getenv("EVALUATE_IDK_LOG_LEVEL", "INFO"))
 
@@ -81,111 +88,170 @@ def gpqa_diamond_idk_prompt(line: dict, task_name: str) -> Doc:
 # Custom metrics
 # -----------------------------
 
-def get_answer_letter(pred: str) -> str:
+def extract_letter_fallback(pred: str) -> str | None:
+    """Fallback extractor for a single-letter choice when regex extraction fails.
+
+    Heuristics (in order):
+      1) LaTeX boxed forms anywhere: $\boxed{X}$, \boxed{X}, boxed(X)
+      2) "Answer: X" (strict)
+      3) "Final answer: X"
+      4) "Option X" or "Choice X"
+    """
     if not pred:
         return None
-    # Strictly parse "Answer: {letter}"
-    match = re.search(r"answer\s*:\s*([A-E])", pred, re.IGNORECASE)
-    if not match:
-        logging.warning("Could not parse 'Answer: {letter}' from prediction: %r", pred)
-        return None
-    return match.group(1).upper()
+
+    # 1) LaTeX boxed forms anywhere in the output
+    #    Accept variants: $\boxed{E}$, \boxed{E}, boxed(E), boxed{E}
+    boxed_patterns = [
+        r"\$?\\boxed\s*\{\s*([A-E])\s*\}\$?",
+        r"\bboxed\s*\(\s*([A-E])\s*\)",
+        r"\bboxed\s*\{\s*([A-E])\s*\}",
+    ]
+    for pat in boxed_patterns:
+        m = re.search(pat, pred, re.IGNORECASE)
+        if m:
+            return m.group(1).upper()
+
+    # 2) Strict format if present anywhere
+    strict = re.search(r"\banswer\s*[:\-]?\s*([A-E])\b", pred, re.IGNORECASE)
+    if strict:
+        return strict.group(1).upper()
+
+    tail = pred[-200:]
+
+    # 3) "final answer: X"
+    m = re.search(r"\bfinal\s+answer\s*[:\-]?\s*([A-E])\b", tail, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+
+    # 4) "option X" or "choice X"
+    m = re.search(r"\b(?:option|choice)\s*([A-E])\b", tail, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+
+    return None
 
 
-class GPQAScore(SampleLevelComputation):
-    """Score per sample: +1 correct (A-D), -1 wrong (A-D), 0 for E (I don't know)."""
+class ExtractiveLetterIdkGrouped(SampleLevelComputation):
+    """Compute trad_score, idk_score and idk_freq together using the same extraction.
 
-    def __init__(self, idk: bool):
-        self.idk = idk
-
-    def is_idk(self, pred_letter: str) -> bool:
-        return pred_letter == "E" if self.idk else False
-
-    def compute(self, doc: Doc, model_response, **kwargs) -> int:
-        # Model is expected to answer with one of the letters present in doc.choices, e.g., "A".."E"
-        pred_letter = get_answer_letter((model_response.final_text[0] or "").strip())
-        if not pred_letter:
-            return 0
-
-        if pred_letter not in doc.choices:
-            logging.warning("Invalid prediction. pred_raw=%r choices=%s", pred_letter, doc.choices)
-            return 0
-
-        correct_letter = (
-            doc.choices[doc.gold_index] if 0 <= doc.gold_index < len(doc.choices) else None
-        )
-
-        # Map letters A–D to indices and compare to gold
-        pred_ix = doc.choices.index(pred_letter)
-        # If the model answered correctly, score is 1
-        if pred_ix == doc.gold_index:
-            score = 1
-        else:
-            if self.idk:
-                # If we have the IDK score, it's -1 for wrong
-                score = -1
-                # Unless the model answered IDK, score is 0
-                if self.is_idk(pred_letter):
-                    score = 0
-            else:
-                # For the traditional score, it's 0 for wrong
-                score = 0
-
-        logging.debug("Correct: %s", correct_letter)
-        logging.debug("Predicted: %s", pred_letter)
-        logging.debug("Score: %s", score)
-        logging.debug("Model response: %r", getattr(model_response, "final_text", None))
-        return score
-
-
-class GPQAIdkFlag(SampleLevelComputation):
-    """Return 1 if the model answered E (I don't know), 0 otherwise."""
-
-    def compute(self, doc: Doc, model_response, **kwargs) -> int:
-        pred_letter = get_answer_letter((model_response.final_text[0] or "").strip())
-        if not pred_letter:
-            return 0
-        return int(pred_letter == "E")
-
-
-def corpus_mean_or_zero(flags):
-    """Return the mean of flags as a float, or 0.0 if empty.
-
-    Defined at module top-level to ensure picklability under multiprocessing.
+    - trad_score: 1 if correct (A-D), else 0 (including E)
+    - idk_score: +1 correct (A-D), 0 if E, -1 otherwise
+    - idk_freq: 1 if E, else 0
     """
-    if len(flags) == 0:
-        return 0.0
-    return float(np.mean(flags))
 
-traditional_score_metric = SampleLevelMetric(
-    metric_name="traditional_score",
-    sample_level_fn=GPQAScore(idk=False),
-    category=SamplingMethod.GENERATIVE,
-    corpus_level_fn=np.mean,
-    higher_is_better=True,
-)
+    def __init__(
+        self,
+        language: Language = Language.ENGLISH,
+        aggregation_function=max,
+        fallback_mode: str = "first_match",
+        extraction_mode: str = "any_match",
+        precision: int = 6,
+        timeout_seconds: int = 5,
+    ):
+        self.language = language
+        self.gold_extraction_target = [IndicesExtractionConfig(prefix_for_extraction="NativeLetters")]
+        self.pred_extraction_target = [IndicesExtractionConfig(prefix_for_extraction="NativeLetters")]
+        self.aggregation_function = aggregation_function
+        self.fallback_mode = fallback_mode
+        self.extraction_mode = extraction_mode
+        self.precision = precision
+        self.timeout_seconds = timeout_seconds
 
-idk_score_metric = SampleLevelMetric(
-    metric_name="idk_score",
-    sample_level_fn=GPQAScore(idk=True),
-    category=SamplingMethod.GENERATIVE,
-    corpus_level_fn=np.mean,
-    higher_is_better=True,
-)
+    def _score_letter(self, letter: str, correct_letter: str, choices: list[str]) -> int:
+        if not isinstance(letter, str) or letter not in choices:
+            return -1
+        if letter == "E":
+            return 0
+        if letter == correct_letter:
+            return 1
+        return -1
 
-idk_percent_metric = SampleLevelMetric(
-    metric_name="idk_percent",
-    sample_level_fn=GPQAIdkFlag(),
+    def compute(self, doc: Doc, model_response, **kwargs) -> dict:
+        golds = doc.get_golds()
+        predictions = model_response.final_text
+
+        gold_extraction_regexes = get_extraction_regexes(doc, self.gold_extraction_target, self.language)
+        pred_extraction_regexes = get_extraction_regexes(doc, self.pred_extraction_target, self.language)
+
+        extracted_predictions = []
+        for pred in predictions:
+            preds = extract_target_from_pred(
+                pred,
+                pred_extraction_regexes,
+                self.fallback_mode,
+                self.extraction_mode,
+                self.timeout_seconds,
+            )
+            if len(preds) == 0:
+                fallback_letter = extract_letter_fallback(pred)
+                if fallback_letter is not None:
+                    preds = [fallback_letter]
+            if len(preds) > 1:
+                seen = set()
+                preds = [x for x in preds if not (x in seen or seen.add(x))]
+            extracted_predictions.append(preds)
+
+        extracted_golds = [
+            extract_target_from_pred(
+                gold,
+                gold_extraction_regexes,
+                "no_fallback",
+                self.extraction_mode,
+                self.timeout_seconds,
+            )
+            for gold in golds
+        ]
+
+        if any(len(g) == 0 for g in extracted_golds):
+            extracted_golds = [[gold] for gold in golds]
+        else:
+            extracted_golds = [
+                (list(dict.fromkeys(g)) if len(g) > 1 else g) for g in extracted_golds
+            ]
+
+        if doc.specific is None:
+            doc.specific = {}
+        doc.specific["extracted_predictions"] = [str(pred) for preds in extracted_predictions for pred in preds]
+        doc.specific["extracted_golds"] = [str(gold) for golds_ in extracted_golds for gold in golds_]
+
+        correct_letter = doc.choices[doc.gold_index] if 0 <= doc.gold_index < len(doc.choices) else None
+
+        def score_for_one_prediction_group(preds_for_one_text: list[str]) -> tuple[int, int, int]:
+            if len(preds_for_one_text) == 0:
+                return 0, -1, 0
+            scores = [self._score_letter(p, correct_letter, doc.choices) for p in preds_for_one_text]
+            idk_flags = [1 if p == "E" else 0 for p in preds_for_one_text if isinstance(p, str)]
+            trad_scores = [1 if (isinstance(p, str) and p == correct_letter) else 0 for p in preds_for_one_text]
+            return max(trad_scores), max(scores), max(idk_flags) if idk_flags else 0
+
+        per_prediction = [score_for_one_prediction_group(preds) for preds in extracted_predictions]
+        if len(per_prediction) == 0:
+            return {"trad_score": 0.0, "idk_score": -1.0, "idk_freq": 0.0}
+
+        trad_scores = [t for t, _, _ in per_prediction]
+        idk_scores = [s for _, s, _ in per_prediction]
+        idk_flags = [f for _, _, f in per_prediction]
+
+        return {
+            "trad_score": float(self.aggregation_function(trad_scores)),
+            "idk_score": float(self.aggregation_function(idk_scores)),
+            "idk_freq": float(max(idk_flags)),
+        }
+
+
+idk_grouped_metrics = SampleLevelMetricGrouping(
+    metric_name=["trad_score", "idk_score", "idk_freq"],
+    sample_level_fn=ExtractiveLetterIdkGrouped(),
     category=SamplingMethod.GENERATIVE,
-    corpus_level_fn=corpus_mean_or_zero,
-    higher_is_better=False,
+    corpus_level_fn={"trad_score": np.mean, "idk_score": np.mean, "idk_freq": np.mean},
+    higher_is_better={"trad_score": True, "idk_score": True, "idk_freq": False},
 )
 
 
 # -----------------------------
 # Task config
 # -----------------------------
-
 
 task = LightevalTaskConfig(
     name="gpqa-diamond-idk",
@@ -197,7 +263,7 @@ task = LightevalTaskConfig(
     evaluation_splits=["train"],
     few_shots_split=None,
     few_shots_select=None,
-    metrics=[traditional_score_metric, idk_score_metric, idk_percent_metric],
+    metrics=[idk_grouped_metrics],
     generation_size=32768,
     stop_sequence=["\n"],
 )
