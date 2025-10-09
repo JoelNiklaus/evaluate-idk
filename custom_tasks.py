@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import random
+import logging
+import ast
+import re
 import numpy as np
 import os
-import logging
-import re
+import litellm
 
 from dotenv import load_dotenv
+
 from lighteval.metrics.utils.metric_utils import SampleLevelMetricGrouping
+from lighteval.metrics.metrics_sample import SampleLevelComputation
+from lighteval.tasks.requests import Doc, SamplingMethod
 from lighteval.metrics.metrics_sample import SampleLevelComputation
 from lighteval.tasks.default_prompts import LETTER_INDICES
 from lighteval.tasks.lighteval_task import LightevalTaskConfig
-from lighteval.tasks.requests import Doc
-from lighteval.tasks.requests import SamplingMethod
 from lighteval.metrics.utils.extractive_match_utils import (
     IndicesExtractionConfig,
     get_extraction_regexes,
@@ -25,9 +28,119 @@ logging.basicConfig(level=os.getenv("EVALUATE_IDK_LOG_LEVEL", "INFO"))
 
 load_dotenv()
 
+litellm.suppress_debug_info = True
+
+random.seed(42)
+
+
+logger = logging.getLogger(__name__)
+
+
+NUM_CHOICES = 5  # A, B, C, D, E (where E is "I don't know")
+MATCH_CHOICE_REGEX = r"###([ABCDE])###"
+
+# Task configuration constants
+GENERATION_SIZE = 32768
+STOP_SEQUENCES = ["\n", "\n\n"]
+
+# Shared instruction for IDK tasks
+IDK_INSTRUCTION = (
+    "Before answering, think about the question step by step. "
+    "Answer only if you are confident, since mistakes are penalized with -1 points, "
+    "while correct answers receive 1 point, and the answer E) \"I don't know\" always receives 0 points. "
+    "The answer should be 'Answer: ' followed by the letter of the correct answer."
+)
+
 # -----------------------------
-# Prompt function
+# Prompt functions
 # -----------------------------
+
+
+def shuffle_choices(choice_list: list[str], gold_index: int) -> tuple[list[str], int]:
+    """Shuffle choices while tracking the correct answer's new position.
+    
+    Args:
+        choice_list: List of 4 answer choices
+        gold_index: Current index of the correct answer (0-3)
+        
+    Returns:
+        Tuple of (shuffled_choices, new_gold_index)
+    """
+    correct_answer = choice_list[gold_index]
+    shuffled = choice_list.copy()
+    random.shuffle(shuffled)
+    new_gold_index = shuffled.index(correct_answer)
+    return shuffled, new_gold_index
+
+
+def build_choices_string(choice_list: list[str]) -> str:
+    """Build a formatted string of choices A-D plus E) I don't know.
+    
+    Args:
+        choice_list: List of 4 answer choices
+        
+    Returns:
+        Formatted string with A-D choices and E) I don't know
+    """
+    choices_str = ""
+    for letter, choice in zip(LETTER_INDICES[:NUM_CHOICES - 1], choice_list):
+        choices_str += f"{letter}) {choice}\n"
+    choices_str += f"{LETTER_INDICES[NUM_CHOICES - 1]}) I don't know"
+    return choices_str
+
+
+def lexam_idk_prompt(sample, task_name: str = None):
+    """Convert a LEXam row to a Doc with 4 shuffled choices + E: I don't know.
+    
+    Expected input fields:
+    - question: the question text
+    - choices: list of 4 answer choices
+    - course: the course name
+    - gold: index of correct answer (0-3)
+    """
+    course_name = sample["course"]
+    question_text = sample["question"].strip()
+    
+    if isinstance(sample["choices"], list):
+        choice_list = sample["choices"]
+    else:
+        choice_list = ast.literal_eval(sample["choices"])
+    
+    # Shuffle choices while tracking the correct answer
+    shuffled_choices, gold_index = shuffle_choices(choice_list, sample["gold"])
+    
+    choices_str = build_choices_string(shuffled_choices)
+    
+    # Build the query with A–D from the choice list and E fixed as IDK
+    query = f"""You are an expert in {course_name} and address legal issues in a structured, exam-style manner.
+You are given a multiple-choice question, where only one choice (e.g., A, B, C, etc.) is correct.
+Assume Swiss law applies unless specifically stated otherwise. If the context of the course justifies it, consider legal frameworks beyond Swiss law as well.
+
+Please reason through the question step by step, using a chain-of-thought approach:
+- Clarify the facts: Briefly restate or highlight the key facts in the question to anchor your reasoning.
+- Issue Identification: What legal issue(s) arise from the facts?
+- Rule Explanation: What legal rules or principles are relevant, and what are their sources (e.g., statutes, case law, doctrine)?
+- Application and Reasoning: Apply the relevant rules to the facts, carefully weighing any ambiguities, exceptions, or competing interpretations.
+- Eliminate Incorrect Answers: Briefly explain why each incorrect answer is wrong or less convincing.
+- Conclusion: Clearly state the correct answer choice (e.g., A, B, C, etc.) with a brief justification for why it best fits the legal analysis.
+
+Format your final answer as follows:
+ Correct Answer: ###C###
+
+Question:
+ {question_text}
+
+{choices_str}
+
+Answer:"""
+    
+    return Doc(
+        task_name=task_name,
+        query=query,
+        choices=LETTER_INDICES[:NUM_CHOICES],  # ["A","B","C","D","E"]
+        gold_index=gold_index,  # gold is among A–D (0-3)
+        instruction=IDK_INSTRUCTION,
+    )
 
 
 def gpqa_diamond_idk_prompt(line: dict, task_name: str) -> Doc:
@@ -54,33 +167,28 @@ def gpqa_diamond_idk_prompt(line: dict, task_name: str) -> Doc:
         line["Incorrect Answer 3"].strip(),
     ]
 
-    # Shuffle A–D while keeping track of the correct answer index
+    # Shuffle A–D while tracking the correct answer index
     choices_ad = incorrects + [correct]
-    random.shuffle(choices_ad)
-    gold_index = choices_ad.index(correct)
+    shuffled_choices, gold_index = shuffle_choices(choices_ad, gold_index=3)
+
+    choices_str = build_choices_string(shuffled_choices)
 
     # Build the query with A–D from shuffled list and E fixed as IDK
-    query = (
-        f"Answer the following multiple choice question.\n\n"
-        f"{question_text}\n\n"
-        f"A) {choices_ad[0]}\n"
-        f"B) {choices_ad[1]}\n"
-        f"C) {choices_ad[2]}\n"
-        f"D) {choices_ad[3]}\n"
-        f"E) I don't know\n\n"
-    )
+    query = f"""Answer the following multiple choice question.
+
+{question_text}
+
+{choices_str}
+
+Answer:"""
 
     # Model must output a letter among A–E
     return Doc(
         task_name=task_name,
         query=query,
-        choices=LETTER_INDICES[:5],  # ["A","B","C","D","E"]
+        choices=LETTER_INDICES[:NUM_CHOICES],  # ["A","B","C","D","E"]
         gold_index=gold_index,  # only among A–D
-        instruction=(
-            f"Before answering, think about the question step by step. "
-            f"Answer only if you are confident, since mistakes are penalized with -1 points, "
-            f"while correct answers receive 1 point, and the answer E) \"I don't know\" always receives 0 points. "
-            f"The answer should be 'Answer: ' followed by the letter of the correct answer.")
+        instruction=IDK_INSTRUCTION,
     )
 
 
@@ -92,15 +200,21 @@ def extract_letter_fallback(pred: str) -> str | None:
     """Fallback extractor for a single-letter choice when regex extraction fails.
 
     Heuristics (in order):
-      1) LaTeX boxed forms anywhere: $\boxed{X}$, \boxed{X}, boxed(X)
-      2) "Answer: X" (strict)
-      3) "Final answer: X"
-      4) "Option X" or "Choice X"
+      1) LEXam format: ###X###
+      2) LaTeX boxed forms anywhere: $\boxed{X}$, \boxed{X}, boxed(X)
+      3) "Answer: X" (strict)
+      4) "Final answer: X"
+      5) "Option X" or "Choice X"
     """
     if not pred:
         return None
 
-    # 1) LaTeX boxed forms anywhere in the output
+    # 1) LEXam format: ###X### (extract last occurrence)
+    matches = re.findall(MATCH_CHOICE_REGEX, pred)
+    if matches:
+        return matches[-1].upper()
+
+    # 2) LaTeX boxed forms anywhere in the output
     #    Accept variants: $\boxed{E}$, \boxed{E}, boxed(E), boxed{E}, and $\boxed{\text{E}}$
     boxed_patterns = [
         # \boxed{E} with optional surrounding $ ... $
@@ -119,19 +233,19 @@ def extract_letter_fallback(pred: str) -> str | None:
         if m:
             return m.group(1).upper()
 
-    # 2) Strict format if present anywhere
+    # 3) Strict format if present anywhere
     strict = re.search(r"\banswer\s*[:\-]?\s*([A-E])\b", pred, re.IGNORECASE)
     if strict:
         return strict.group(1).upper()
 
     tail = pred[-200:]
 
-    # 3) "final answer: X"
+    # 4) "final answer: X"
     m = re.search(r"\bfinal\s+answer\s*[:\-]?\s*([A-E])\b", tail, re.IGNORECASE)
     if m:
         return m.group(1).upper()
 
-    # 4) "option X" or "choice X"
+    # 5) "option X" or "choice X"
     m = re.search(r"\b(?:option|choice)\s*([A-E])\b", tail, re.IGNORECASE)
     if m:
         return m.group(1).upper()
@@ -260,10 +374,25 @@ idk_grouped_metrics = SampleLevelMetricGrouping(
 
 
 # -----------------------------
-# Task config
+# Task configurations
 # -----------------------------
 
-task = LightevalTaskConfig(
+lexam_idk_task = LightevalTaskConfig(
+    name='lexam-idk',
+    prompt_function=lexam_idk_prompt,
+    hf_repo="LEXam-Benchmark/LEXam",
+    hf_subset="mcq_4_choices",
+    hf_avail_splits=["test"],
+    evaluation_splits=["test"],
+    few_shots_split=None,
+    few_shots_select=None,
+    metrics=[idk_grouped_metrics],
+    suite=["community"],
+    generation_size=GENERATION_SIZE,
+    stop_sequence=STOP_SEQUENCES,
+)
+
+gpqa_diamond_idk_task = LightevalTaskConfig(
     name="gpqa-diamond-idk",
     prompt_function=gpqa_diamond_idk_prompt,
     suite=["community"],
@@ -274,11 +403,19 @@ task = LightevalTaskConfig(
     few_shots_split=None,
     few_shots_select=None,
     metrics=[idk_grouped_metrics],
-    generation_size=32768,
-    stop_sequence=["\n"],
+    generation_size=GENERATION_SIZE,
+    stop_sequence=STOP_SEQUENCES,
 )
 
 # Export table for discovery
-TASKS_TABLE = [task]
+TASKS_TABLE = [lexam_idk_task, gpqa_diamond_idk_task]
+
+if __name__ == "__main__":
+    print([t.name for t in TASKS_TABLE])
+    print(len(TASKS_TABLE))
+
+
+
+
 
 
