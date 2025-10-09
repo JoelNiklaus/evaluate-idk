@@ -7,21 +7,19 @@ import sys
 
 # Models to run via OpenRouter using the litellm adapter.
 OPENROUTER_MODELS: list[str] = [
-    # "openai/gpt-oss-20b:free",
-    # "openai/gpt-5-nano",
-    # "z-ai/glm-4.6",
-    # "anthropic/claude-sonnet-4.5",
-    # "openai/gpt-5",
-    # "openai/gpt-5-mini",
-    # "openai/gpt-5-nano",
-    # "openai/gpt-4.1",
-    # "openai/gpt-4.1-mini",
-    # "google/gemini-2.5-pro",
+    #"anthropic/claude-sonnet-4.5",
+    #"z-ai/glm-4.6",
+    #"openai/gpt-5",
+    #"openai/gpt-5-mini",
+    #"openai/gpt-5-nano",
+    #"openai/gpt-4.1",
+    #"openai/gpt-4.1-mini",
+    #"google/gemini-2.5-pro",
     "google/gemini-2.5-flash",
-    # "anthropic/claude-sonnet-4",
-    # "deepseek/deepseek-v3.1-terminus",
-    # "qwen/qwen3-next-80b-a3b-thinking",
-    # "moonshotai/kimi-k2-0905",
+    #"anthropic/claude-sonnet-4",
+    #"deepseek/deepseek-v3.1-terminus",
+    #"qwen/qwen3-next-80b-a3b-thinking",
+    #"moonshotai/kimi-k2-0905",
 ]
 
 # Endpoints to run via a custom inference endpoint (configured in endpoint_model.yaml)
@@ -115,10 +113,14 @@ def main(argv: list[str]) -> int:
             concurrent_requests=debug_concurrent_requests,
             max_samples=debug_max_samples,
         )
+        if args.debug:
+            cmd += ["--output-dir", "results-debug"]
         run_command(cmd)
 
     for _ in INFERENCE_ENDPOINT_MODELS:
         cmd = build_inference_endpoint_command(max_samples=debug_max_samples)
+        if args.debug:
+            cmd += ["--output-dir", "results-debug"]
         run_command(cmd)
 
     return 0
