@@ -37,19 +37,25 @@ logger = logging.getLogger(__name__)
 
 
 NUM_CHOICES = 5  # A, B, C, D, E (where E is "I don't know")
-MATCH_CHOICE_REGEX = r"###([ABCDE])###"
 
 # Task configuration constants
 GENERATION_SIZE = 32768
 STOP_SEQUENCES = ["\n", "\n\n"]
 
-# Shared instruction for IDK tasks
-IDK_INSTRUCTION = (
-    "Before answering, think about the question step by step. "
-    "Answer only if you are confident, since mistakes are penalized with -1 points, "
-    "while correct answers receive 1 point, and the answer E) \"I don't know\" always receives 0 points. "
-    "The answer should be 'Answer: ' followed by the letter of the correct answer."
-)
+PROMPT_TEMPLATE = """Question:
+{question_text}
+
+Choices:
+{choices_str}
+
+Before answering, think about the question step by step.
+Answer only if you are confident, since mistakes are penalized with -1 points, while correct answers receive 1 point, and the answer E) \"I don't know\" always receives 0 points.
+
+Format your final answer as follows:
+Final Answer: ###C###
+
+Answer:
+"""
 
 # -----------------------------
 # Prompt functions
@@ -112,7 +118,7 @@ def lexam_idk_prompt(sample, task_name: str = None):
     choices_str = build_choices_string(shuffled_choices)
     
     # Build the query with A–D from the choice list and E fixed as IDK
-    query = f"""You are an expert in {course_name} and address legal issues in a structured, exam-style manner.
+    instruction = f"""You are an expert in {course_name} and address legal issues in a structured, exam-style manner.
 You are given a multiple-choice question, where only one choice (e.g., A, B, C, etc.) is correct.
 Assume Swiss law applies unless specifically stated otherwise. If the context of the course justifies it, consider legal frameworks beyond Swiss law as well.
 
@@ -123,23 +129,14 @@ Please reason through the question step by step, using a chain-of-thought approa
 - Application and Reasoning: Apply the relevant rules to the facts, carefully weighing any ambiguities, exceptions, or competing interpretations.
 - Eliminate Incorrect Answers: Briefly explain why each incorrect answer is wrong or less convincing.
 - Conclusion: Clearly state the correct answer choice (e.g., A, B, C, etc.) with a brief justification for why it best fits the legal analysis.
-
-Format your final answer as follows:
- Correct Answer: ###C###
-
-Question:
- {question_text}
-
-{choices_str}
-
-Answer:"""
+"""
     
     return Doc(
         task_name=task_name,
-        query=query,
+        query=PROMPT_TEMPLATE.format(question_text=question_text, choices_str=choices_str),
         choices=LETTER_INDICES[:NUM_CHOICES],  # ["A","B","C","D","E"]
         gold_index=gold_index,  # gold is among A–D (0-3)
-        instruction=IDK_INSTRUCTION,
+        instruction=instruction,
     )
 
 
@@ -173,22 +170,14 @@ def gpqa_diamond_idk_prompt(line: dict, task_name: str) -> Doc:
 
     choices_str = build_choices_string(shuffled_choices)
 
-    # Build the query with A–D from shuffled list and E fixed as IDK
-    query = f"""Answer the following multiple choice question.
+    instruction = f"""Answer the following multiple choice question."""
 
-{question_text}
-
-{choices_str}
-
-Answer:"""
-
-    # Model must output a letter among A–E
     return Doc(
         task_name=task_name,
-        query=query,
+        query=PROMPT_TEMPLATE.format(question_text=question_text, choices_str=choices_str),
         choices=LETTER_INDICES[:NUM_CHOICES],  # ["A","B","C","D","E"]
         gold_index=gold_index,  # only among A–D
-        instruction=IDK_INSTRUCTION,
+        instruction=instruction,
     )
 
 
@@ -210,7 +199,7 @@ def extract_letter_fallback(pred: str) -> str | None:
         return None
 
     # 1) LEXam format: ###X### (extract last occurrence)
-    matches = re.findall(MATCH_CHOICE_REGEX, pred)
+    matches = re.findall(r"###([ABCDE])###", pred)
     if matches:
         return matches[-1].upper()
 
