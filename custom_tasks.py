@@ -367,10 +367,11 @@ idk_grouped_metrics = SampleLevelMetricGrouping(
 # -----------------------------
 
 lexam_idk_task = LightevalTaskConfig(
-    name='lexam-idk',
+    name='lexam-en-idk',
     prompt_function=lexam_idk_prompt,
     hf_repo="LEXam-Benchmark/LEXam",
     hf_subset="mcq_4_choices",
+    hf_filter=lambda x: x["language"] == "en",
     hf_avail_splits=["test"],
     evaluation_splits=["test"],
     few_shots_split=None,
@@ -387,6 +388,7 @@ gpqa_diamond_idk_task = LightevalTaskConfig(
     suite=["community"],
     hf_repo="Idavidrein/gpqa",
     hf_subset="gpqa_diamond",
+    hf_filter=None,
     hf_avail_splits=["train"],
     evaluation_splits=["train"],
     few_shots_split=None,
