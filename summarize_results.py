@@ -177,7 +177,7 @@ def print_table(per_model_data, benchmark_name):
 
 # Print tables for both benchmarks
 gpqa_rows = print_table(per_model_gpqa, "GPQA Diamond")
-lexam_rows = print_table(per_model_lexam, "LEXAM")
+lexam_rows = print_table(per_model_lexam, "LEXam English")
 
 # --- Visualization: Bar chart of performance drop (trad vs idk) ---
 try:
@@ -194,9 +194,9 @@ def create_chart(rows, benchmark_name, filename):
     desired_models = {
         "gemini-2.5-pro": "Gemini 2.5 Pro",
         "gpt-5": "GPT-5",
+        "gpt-5-mini": "GPT-5 Mini",
         "gpt-5-nano": "GPT-5 Nano",
         "gemini-2.5-flash": "Gemini 2.5 Flash",
-        "gpt-4.1": "GPT-4.1",
         "claude-sonnet-4.5": "Claude Sonnet 4.5",
     }
 
