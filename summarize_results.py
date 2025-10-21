@@ -108,6 +108,9 @@ def print_table(per_model_data, benchmark_name):
             )
         )
     
+    # Sort by trad_score descending (None values at the end)
+    rows.sort(key=lambda r: r[1] if r[1] is not None else -float('inf'), reverse=True)
+    
     if not rows:
         print(f"No results for {benchmark_name}.")
         return rows
