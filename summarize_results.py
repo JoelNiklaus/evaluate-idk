@@ -188,20 +188,20 @@ try:
 except Exception:
     plt = None
 
-def create_chart(rows, benchmark_name, filename):
-    """Create a bar chart for a specific benchmark."""
+def create_chart(rows, benchmark_name, filename, model_configs):
+    """Create a bar chart for a specific benchmark.
+    
+    Args:
+        rows: List of tuples with model results
+        benchmark_name: Name of the benchmark for the chart title
+        filename: Output filename for the chart
+        model_configs: List of tuples (model_id, display_name) specifying which models to include and in what order
+    """
     if plt is None:
         return
     
     # Filter to selected models only
-    desired_models = {
-        "gemini-2.5-pro": "Gemini 2.5 Pro",
-        "gpt-5": "GPT-5",
-        "gpt-5-mini": "GPT-5 Mini",
-        "gpt-5-nano": "GPT-5 Nano",
-        "gemini-2.5-flash": "Gemini 2.5 Flash",
-        "claude-sonnet-4.5": "Claude Sonnet 4.5",
-    }
+    desired_models = {model_id: display_name for model_id, display_name in model_configs}
 
     # Build mapping from model -> metrics
     latest_by_model = {m: None for m in desired_models.keys()}
@@ -226,8 +226,8 @@ def create_chart(rows, benchmark_name, filename):
                 "idk_freq_se": idk_f_se,
             }
 
-    # Keep only present models, preserving a preferred order
-    ordered_keys = [k for k in ["gemini-2.5-pro", "gpt-5", "gpt-5-nano", "gemini-2.5-flash", "gpt-4.1", "claude-sonnet-4.5"] if latest_by_model.get(k) is not None]
+    # Keep only present models, preserving the order from model_configs
+    ordered_keys = [model_id for model_id, _ in model_configs if latest_by_model.get(model_id) is not None]
     if not ordered_keys:
         return
     
@@ -349,7 +349,24 @@ def create_chart(rows, benchmark_name, filename):
     print(f"Saved bar chart to: {out_path}")
 
 if plt is not None:
-    create_chart(gpqa_rows, "GPQA Diamond", "score_drop_barchart_gpqa.png")
-    create_chart(lexam_rows, "LEXAM", "score_drop_barchart_lexam.png")
+    # Define models for GPQA Diamond
+    gpqa_models = [
+        ("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("gpt-5", "GPT-5"),
+        ("gpt-5-nano", "GPT-5 Nano"),
+        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
+        ("gpt-4.1", "GPT-4.1"),
+    ]
+    
+    # Define models for LEXAM
+    lexam_models = [
+        ("gpt-5", "GPT-5"),
+        ("grok-4-fast", "Grok-4 Fast"),
+        ("gpt-5-nano", "GPT-5 Nano"),
+        ("DeepSeek-V3.1-Terminus", "DeepSeek V3.1 Terminus"),
+    ]
+    
+    create_chart(gpqa_rows, "GPQA Diamond", "score_drop_barchart_gpqa.png", gpqa_models)
+    create_chart(lexam_rows, "LEXAM", "score_drop_barchart_lexam.png", lexam_models)
 else:
     print("matplotlib not available; skipping chart generation.")
