@@ -13,6 +13,8 @@ dependencies = [
     "python-dotenv",
     "litellm[caching]",
     "matplotlib",
+    "tiktoken",
+    "blobfile",
 ]
 
 [project.optional-dependencies]
