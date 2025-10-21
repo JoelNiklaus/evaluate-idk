@@ -1,0 +1,148 @@
+{
+  "config_general": {
+    "lighteval_sha": "?",
+    "num_fewshot_seeds": 1,
+    "max_samples": null,
+    "job_id": "0",
+    "start_time": 193477.92641375,
+    "end_time": 193499.437107083,
+    "total_evaluation_time_secondes": "21.510693332995288",
+    "model_config": {
+      "model_name": "openrouter/anthropic/claude-sonnet-4.5",
+      "generation_parameters": {
+        "num_blocks": null,
+        "block_size": null,
+        "early_stopping": null,
+        "repetition_penalty": null,
+        "frequency_penalty": null,
+        "length_penalty": null,
+        "presence_penalty": null,
+        "max_new_tokens": null,
+        "min_new_tokens": null,
+        "seed": null,
+        "stop_tokens": null,
+        "temperature": 0,
+        "top_k": null,
+        "min_p": null,
+        "top_p": null,
+        "truncate_prompt": null,
+        "cache_implementation": null,
+        "response_format": null
+      },
+      "system_prompt": null,
+      "cache_dir": "~/.cache/huggingface/lighteval",
+      "provider": "openrouter",
+      "base_url": null,
+      "api_key": null,
+      "concurrent_requests": 10
+    },
+    "model_name": "openrouter/anthropic/claude-sonnet-4.5"
+  },
+  "results": {
+    "community|lexam-en-idk|0": {
+      "trad_score": 0.6462035541195477,
+      "trad_score_stderr": 0.01923389170789642,
+      "idk_score": 0.3570274636510501,
+      "idk_score_stderr": 0.036156595650591594,
+      "idk_freq": 0.06462035541195477,
+      "idk_freq_stderr": 0.009889728995732936,
+      "extract_fail": 0.0032310177705977385,
+      "extract_fail_stderr": 0.0022828253851532422
+    },
+    "all": {
+      "trad_score": 0.6462035541195477,
+      "trad_score_stderr": 0.01923389170789642,
+      "idk_score": 0.3570274636510501,
+      "idk_score_stderr": 0.036156595650591594,
+      "idk_freq": 0.06462035541195477,
+      "idk_freq_stderr": 0.009889728995732936,
+      "extract_fail": 0.0032310177705977385,
+      "extract_fail_stderr": 0.0022828253851532422
+    }
+  },
+  "versions": {},
+  "config_tasks": {
+    "community|lexam-en-idk|0": {
+      "name": "lexam-en-idk",
+      "prompt_function": "lexam_idk_prompt",
+      "hf_repo": "LEXam-Benchmark/LEXam",
+      "hf_subset": "mcq_4_choices",
+      "metrics": [
+        {
+          "metric_name": [
+            "trad_score",
+            "idk_score",
+            "idk_freq",
+            "extract_fail"
+          ],
+          "higher_is_better": {
+            "trad_score": true,
+            "idk_score": true,
+            "idk_freq": false,
+            "extract_fail": false
+          },
+          "category": "GENERATIVE",
+          "sample_level_fn": "ExtractiveLetterIdkGrouped(language=Language.ENGLISH, gold_extraction_target=[IndicesExtractionConfig(prefix_for_extraction='NativeLetters', try_extract_without_anchor=False)], pred_extraction_target=[IndicesExtractionConfig(prefix_for_extraction='NativeLetters', try_extract_without_anchor=False)], aggregation_function=max, fallback_mode=first_match, extraction_mode=any_match, precision=6, timeout_seconds=5)",
+          "corpus_level_fn": {
+            "trad_score": "mean",
+            "idk_score": "mean",
+            "idk_freq": "mean",
+            "extract_fail": "mean"
+          },
+          "batched_compute": false
+        }
+      ],
+      "hf_revision": null,
+      "hf_filter": "<lambda>",
+      "hf_avail_splits": [
+        "test"
+      ],
+      "evaluation_splits": [
+        "test"
+      ],
+      "few_shots_split": null,
+      "few_shots_select": null,
+      "generation_size": 32768,
+      "generation_grammar": null,
+      "stop_sequence": [
+        "\n",
+        "\n\n"
+      ],
+      "num_samples": null,
+      "suite": [
+        "community"
+      ],
+      "original_num_docs": -1,
+      "effective_num_docs": -1,
+      "must_remove_duplicate_docs": false,
+      "num_fewshots": 0,
+      "version": 0
+    }
+  },
+  "summary_tasks": {
+    "community|lexam-en-idk|0": {
+      "hashes": {
+        "hash_examples": "9419dfa387a0fead",
+        "hash_full_prompts": "ef46db3751d8e999",
+        "hash_input_tokens": "6568f9b97f67c8b0",
+        "hash_cont_tokens": "6568f9b97f67c8b0"
+      },
+      "truncated": 0,
+      "non_truncated": 0,
+      "padded": 0,
+      "non_padded": 0
+    }
+  },
+  "summary_general": {
+    "hashes": {
+      "hash_examples": "f5f332a9532fc393",
+      "hash_full_prompts": "c166e5d20ad58f4e",
+      "hash_input_tokens": "968af49b279cbaa7",
+      "hash_cont_tokens": "968af49b279cbaa7"
+    },
+    "truncated": 0,
+    "non_truncated": 0,
+    "padded": 0,
+    "non_padded": 0
+  }
+}
