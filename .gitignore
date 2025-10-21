@@ -208,3 +208,4 @@ __marimo__/
 
 .litellm_cache/
 results-debug/
+results-old-setup/
