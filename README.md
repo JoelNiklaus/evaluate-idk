@@ -4,7 +4,11 @@ Evaluates to what extent LLMs signal correctly that they don't know the answer t
 ## Overview ✨
 This repo evaluates how reliably LLMs say "I don't know" when they should, and how that calibration affects end-to-end utility. 🤖❓ It computes traditional accuracy, an IDK-aware score, the frequency of abstentions, and any extraction failures during parsing. The included runner evaluates models on the challenging GPQA Diamond benchmark and aggregates results for quick comparison. 🧪📊
 
+So far, this repo supports GPQA-Diamond and LEXam-English.
+
 ## Results 📊
+
+### GPQA-Diamond
 Latest aggregated results (as of September 26, 2025):
 
 | Model                  | trad_score ± se | idk_score ± se | idk_freq ± se | extract_fail ± se |
@@ -19,10 +23,31 @@ Latest aggregated results (as of September 26, 2025):
 | gpt-4.1                |    63.13 ± 3.44 |   27.78 ± 6.79 |   1.52 ± 0.87 |       0.00 ± 0.00 |
 | gpt-4.1-mini           |    61.62 ± 3.46 |   27.27 ± 6.70 |   4.04 ± 1.40 |       0.00 ± 0.00 |
 
-![Performance drop visualization](results/figures/score_drop_barchart.png)
+![Performance drop visualization](results/figures/score_drop_barchart_gqpa.png)
 
-### Quick analysis 🔎
+#### Quick analysis 🔎
 IDK-aware performance broadly mirrors traditional accuracy, with one notable swap at the top: GPT‑5 edges Gemini 2.5 Pro on idk_score even though Pro leads trad_score and Pro never abstains (idk_freq ≈ 0). DeepSeek v3.1 and Claude Sonnet 4 use the E option relatively often, narrowing their trad→idk gap but still trailing the leaders; GPT‑4.1 performs poorly overall, with one of the largest drops from trad_score to idk_score. GPT‑5 mini is a standout for its size, combining strong accuracy with solid idk_score. Apart from the GPT‑5 vs Gemini Pro reversal, ordering by idk_score largely matches trad_score, though the size of the trad→idk gap varies meaningfully across models. Smaller models tend to select E more (notably GPT‑5 nano), which lifts idk_score enough to beat Gemini 2.5 Flash despite the same trad_score. Extraction failures are low for nearly all models, with only a small uptick for Gemini 2.5 Flash.
+
+### LEXam-English
+Latest aggregated results (as of October 9, 2025):
+
+| Model                  | trad_score ± se | idk_score ± se | idk_freq ± se | extract_fail ± se |
+| :--------------------- | --------------: | -------------: | ------------: | ----------------: |
+| gpt-5                  |    69.47 ± 1.85 |   47.17 ± 3.35 |   8.24 ± 1.11 |       0.81 ± 0.36 |
+| gemini-2.5-pro         |    66.72 ± 1.90 |   33.60 ± 3.79 |   0.16 ± 0.16 |       0.32 ± 0.23 |
+| gpt-5-mini             |    66.56 ± 1.90 |   39.90 ± 3.54 |   6.79 ± 1.01 |       0.00 ± 0.00 |
+| gemini-2.5-flash       |    66.24 ± 1.90 |   33.28 ± 3.78 |   0.81 ± 0.36 |       0.81 ± 0.36 |
+| claude-sonnet-4.5      |    64.62 ± 1.92 |   35.70 ± 3.62 |   6.46 ± 0.99 |       0.32 ± 0.23 |
+| grok-4-fast            |    61.23 ± 1.96 |   35.22 ± 3.48 |  12.76 ± 1.34 |       0.16 ± 0.16 |
+| glm-4.6                |    60.74 ± 1.96 |   26.17 ± 3.78 |   4.68 ± 0.85 |       4.52 ± 0.84 |
+| qwen3-max              |    60.58 ± 1.97 |   27.46 ± 3.73 |   6.30 ± 0.98 |       0.65 ± 0.32 |
+| gpt-5-nano             |    56.54 ± 1.99 |   21.97 ± 3.74 |   8.89 ± 1.14 |       0.00 ± 0.00 |
+| DeepSeek-V3.1-Terminus |    53.63 ± 2.01 |   24.88 ± 3.51 |  17.61 ± 1.53 |       0.00 ± 0.00 |
+
+![Performance drop visualization](results/figures/score_drop_barchart_lexam.png)
+
+#### Quick analysis 🔎
+LEXam proves considerably more challenging than GPQA Diamond, with all models showing lower absolute performance and dramatically larger trad→idk drops. GPT‑5 leads both trad_score (69.47%) and idk_score (47.17%), but even the top performer loses over 22 percentage points when accounting for incorrect answers. A striking pattern emerges with the Gemini models: both Pro (66.72% → 33.60%) and Flash (66.24% → 33.28%) virtually never abstain (idk_freq < 1%) and suffer identical ~33-point drops, suggesting systematic overconfidence across the Gemini family. Claude Sonnet 4.5 and GPT‑5 Mini fare better with moderate abstention rates (~6–7%), though their idk_scores still plummet to 35–40%. Models that abstain more liberally—notably DeepSeek v3.1 (17.61% idk_freq) and Grok 4 Fast (12.76%)—mitigate some damage but remain behind due to weaker baseline accuracy. Qwen3-max (60.58% trad, 6.30% idk_freq) sits in the mid-tier with moderate calibration. GPT‑5 Nano shows the widest trad→idk gap (34.57 points), suggesting poor calibration. Overall, LEXam's legal domain questions expose a critical weakness: most models confidently answer incorrectly far too often, and even selective abstention fails to salvage strong idk_scores.
 
 ## Benchmark changes 🛠️
 
@@ -58,7 +83,7 @@ uv pip install -e .
 bash evaluate.sh
 ```
 
-### Aggregate the results in a table
+### Aggregate the results in a table and create a bar plot
 ```bash
 python summarize_results.py
 ```
