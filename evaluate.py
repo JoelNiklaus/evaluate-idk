@@ -16,6 +16,7 @@ OPENROUTER_MODELS: list[str] = [
     #"google/gemini-2.5-pro",
     #"google/gemini-2.5-flash",
     #"qwen/qwen3-max",
+    #"minimax/minimax-m2:free"
 ]
 
 # Endpoints to run via a custom inference endpoint (configured in endpoint_model.yaml)
