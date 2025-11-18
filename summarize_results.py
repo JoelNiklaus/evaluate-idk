@@ -360,9 +360,9 @@ if plt is not None:
     
     # Define models for LEXAM
     lexam_models = [
+        ("gemini-3-pro-preview", "Gemini 3 Pro"),
         ("gpt-5", "GPT-5"),
         ("gemini-2.5-pro", "Gemini 2.5 Pro"),
-        ("gpt-5-mini", "GPT-5 Mini"),
         ("grok-4-fast", "Grok-4 Fast"),
         ("DeepSeek-V3.1-Terminus", "DeepSeek V3.1 Terminus"),
     ]
