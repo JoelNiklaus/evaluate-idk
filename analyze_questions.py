@@ -48,6 +48,14 @@ def load_all_data(parquet_files):
             for idx, row in df.iterrows():
                 question_id = row['doc'].get('id', 'unknown')
                 task_name = row['doc'].get('task_name', 'unknown')
+
+                # Extract specific predictions if available
+                specific = row['doc'].get('specific', {})
+                extracted_preds = []
+                if isinstance(specific, dict):
+                    extracted_preds = specific.get('extracted_predictions', [])
+                elif specific and hasattr(specific, 'get'):
+                    extracted_preds = specific.get('extracted_predictions', [])
                 
                 all_data.append({
                     'question_id': question_id,
@@ -61,7 +69,8 @@ def load_all_data(parquet_files):
                     'full_query': row['doc'].get('query', ''),
                     'model_response': row.get('model_response', ''),
                     'choices': str(row['doc'].get('choices', [])),
-                    'gold_index': row['doc'].get('gold_index', -1)
+                    'gold_index': row['doc'].get('gold_index', -1),
+                    'extracted_predictions': extracted_preds
                 })
         except Exception as e:
             print(f"Error loading {file}: {e}")
@@ -249,6 +258,128 @@ def extract_text_from_response(model_response):
     return str(model_response)
 
 
+def export_top_model_agreement_failures(df, benchmark_name="unknown", output_dir="."):
+    """
+    Export questions where top models are all wrong and agree on the answer.
+    Top models: gpt 5, gemini 3, claude 4.5, deepseek v3.1 terminus, qwen3 max
+    """
+    # Define top models (using exact strings likely to be produced by extract_model_name)
+    # We allow for some variation in naming (e.g. deepseek via different providers)
+    target_models_patterns = [
+        "openai/gpt-5",
+        "google/gemini-3-pro-preview",
+        "anthropic/claude-sonnet-4.5",
+        "qwen/qwen3-max"
+    ]
+    
+    deepseek_patterns = ["deepseek/deepseek-v3.1-terminus", "deepseek-ai/DeepSeek-V3.1-Terminus"]
+    
+    print(f"\nAnalyzing agreement failures for top models...")
+    
+    # Identify which specific model strings exist in our dataframe
+    available_models = df['model'].unique()
+    target_models = []
+    
+    for pattern in target_models_patterns:
+        matches = [m for m in available_models if pattern in m] # Exact match or substring? extract_model_name returns provider/model
+        # We expect exact match mostly, but let's be precise
+        matches = [m for m in available_models if m == pattern]
+        if matches:
+            target_models.extend(matches)
+        else:
+            print(f"Warning: Target model {pattern} not found in data.")
+
+    # Handle DeepSeek separately to find at least one variant
+    ds_matches = [m for m in available_models if any(p in m for p in deepseek_patterns)]
+    if ds_matches:
+        # If multiple deepseek versions, pick the most recent or just include all? 
+        # Let's assume we want to check if *all* selected top models are wrong.
+        # If we have multiple deepseek runs, we might just pick one or treat them as separate validators.
+        # For simplicity, let's take the one that appears most or just the first one found to represent "DeepSeek"
+        # Or better: require ALL found target models to be wrong.
+        target_models.extend(ds_matches)
+    else:
+         print(f"Warning: DeepSeek V3.1 Terminus not found in data.")
+    
+    if not target_models:
+        print("No top models found in the data.")
+        return
+
+    print(f"Checking agreement among: {target_models}")
+    
+    agreement_failures = []
+    
+    for question_id in df['question_id'].unique():
+        q_data = df[df['question_id'] == question_id]
+        
+        # Filter for target models
+        q_models = q_data[q_data['model'].isin(target_models)]
+        
+        # Check if we have all target models for this question
+        # (Or at least a subset? The prompt implies 'the top models', so we generally expect them to be present)
+        # Let's strictly require at least the main ones if possible, but datasets might vary.
+        # For now, check if we have data from at least 2 of the target models to call it 'agreement'
+        if len(q_models) < 2:
+            continue
+            
+        # Check if ALL present target models are wrong (idk_score == -1)
+        if not all(q_models['idk_score'] == -1):
+            continue
+            
+        # Check agreement on the answer text
+        responses = []
+        for _, row in q_models.iterrows():
+            responses.append(extract_text_from_response(row['model_response']))
+        
+        # Extract the predicted answer (A, B, C, D, etc.)
+        predicted_answers = []
+        for _, row in q_models.iterrows():
+            # Use extracted predictions if available
+            preds = row.get('extracted_predictions', [])
+            if hasattr(preds, '__iter__') and len(preds) > 0:
+                predicted_answers.append(str(preds[0]))
+            else:
+                # Fallback to full text if no extracted prediction (less reliable for exact match)
+                predicted_answers.append(extract_text_from_response(row['model_response']))
+
+        # Check if they all agreed on the same specific answer choice
+        if len(set(predicted_answers)) == 1:
+            # Found one!
+            entry = {
+                'question_id': question_id,
+                'task_name': q_models['task_name'].iloc[0],
+                'question': q_models['full_query'].iloc[0],
+                'choices': q_models['choices'].iloc[0],
+                'correct_answer': chr(65 + int(q_models['gold_index'].iloc[0])) if q_models['gold_index'].iloc[0] >= 0 else 'Unknown',
+                'agreed_wrong_answer': predicted_answers[0],
+                'models': ", ".join(q_models['model'].unique())
+            }
+            
+            # Add individual model responses
+            for _, row in q_models.iterrows():
+                model_col = row['model'].replace('/', '_') + "_response"
+                entry[model_col] = extract_text_from_response(row['model_response'])
+            
+            agreement_failures.append(entry)
+
+    if not agreement_failures:
+        print("No questions found where top models are all wrong and agree.")
+        return
+
+    # Export
+    output_filename = f"all_wrong_questions_agreement_{benchmark_name}.csv"
+    if output_dir != ".":
+        output_path = Path(output_dir) / output_filename
+    else:
+        output_path = output_filename
+        
+    export_df = pd.DataFrame(agreement_failures)
+    export_df.to_csv(output_path, index=False)
+    
+    print(f"✅ Exported {len(export_df)} agreement failure questions to: {output_path}")
+    print(f"   These are questions where {target_models} (present subset) were all wrong and gave the exact same answer.")
+
+
 def export_all_wrong_questions(df, question_stats, output_file="all_wrong_questions.csv"):
     """Export questions where all models answered incorrectly to CSV with each model's response."""
     # Filter to questions where all models were wrong
@@ -326,17 +457,25 @@ def main():
         metavar="FILENAME",
         help="Export questions where all models were wrong to CSV file"
     )
+    parser.add_argument(
+        "--export-agreement-failures",
+        action="store_true",
+        help="Export questions where top models (GPT-5, Gemini 3, Claude 4.5, etc.) are all wrong and agree"
+    )
     
     args = parser.parse_args()
     
     # Map short benchmark names to full names
     benchmark_filter = None
+    benchmark_short_name = "all" # Default for filename
+    
     if args.benchmark:
         benchmark_map = {
             "gpqa": "gpqa-diamond-idk",
             "lexam": "lexam-en-idk"
         }
         benchmark_filter = benchmark_map[args.benchmark]
+        benchmark_short_name = args.benchmark
         print(f"Filtering for benchmark: {benchmark_filter}")
     else:
         print("Analyzing all benchmarks")
@@ -437,10 +576,15 @@ def main():
     # Export all wrong questions if requested
     if args.export_all_wrong:
         export_all_wrong_questions(df, question_stats, args.export_all_wrong)
+        
+    # Export agreement failures if requested
+    if args.export_agreement_failures:
+        export_top_model_agreement_failures(df, benchmark_name=benchmark_short_name)
     
     print("\n" + "="*100)
     print("💡 TIP: Use --question-id <ID> to see detailed breakdown for a specific question")
     print("💡 TIP: Use --export-all-wrong <filename.csv> to export questions where all models were wrong")
+    print("💡 TIP: Use --export-agreement-failures to export questions where top models agree on wrong answer")
     print("="*100)
 
 
