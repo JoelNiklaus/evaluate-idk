@@ -362,7 +362,7 @@ if plt is not None:
     lexam_models = [
         ("gemini-3-pro-preview", "Gemini 3 Pro"),
         ("gpt-5", "GPT-5"),
-        ("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("claude-opus-4.5", "Claude Opus 4.5"),
         ("grok-4-fast", "Grok-4 Fast"),
         ("DeepSeek-V3.1-Terminus", "DeepSeek V3.1 Terminus"),
     ]

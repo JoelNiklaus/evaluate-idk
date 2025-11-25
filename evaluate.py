@@ -18,7 +18,8 @@ OPENROUTER_MODELS: list[str] = [
     #"qwen/qwen3-max",
     #"minimax/minimax-m2:free"
     #"moonshotai/kimi-k2-thinking"
-    "google/gemini-3-pro-preview"
+    #"google/gemini-3-pro-preview"
+    "anthropic/claude-opus-4.5"
 ]
 
 # Endpoints to run via a custom inference endpoint (configured in endpoint_model.yaml)
