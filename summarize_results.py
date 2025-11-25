@@ -363,8 +363,8 @@ if plt is not None:
         ("gemini-3-pro-preview", "Gemini 3 Pro"),
         ("gpt-5", "GPT-5"),
         ("claude-opus-4.5", "Claude Opus 4.5"),
-        ("grok-4-fast", "Grok-4 Fast"),
-        ("DeepSeek-V3.1-Terminus", "DeepSeek V3.1 Terminus"),
+        ("claude-sonnet-4.5", "Claude Sonnet 4.5"),
+        ("glm-4.6", "GLM-4.6"),
     ]
     
     create_chart(gpqa_rows, "GPQA Diamond", "score_drop_barchart_gpqa.png", gpqa_models)
