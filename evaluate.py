@@ -3,10 +3,16 @@ import os
 import shlex
 import subprocess
 import sys
+from typing import TypedDict, Union
+
+
+class ModelConfig(TypedDict):
+    name: str
+    reasoning_effort: str # "none", "minimal", "low", "medium", "high" for OpenAI models
 
 
 # Models to run via OpenRouter using the litellm adapter.
-OPENROUTER_MODELS: list[str] = [
+OPENROUTER_MODELS: list[Union[str, ModelConfig]] = [
     #"anthropic/claude-sonnet-4.5",
     #"openai/gpt-5",
     #"z-ai/glm-4.6",
@@ -19,7 +25,12 @@ OPENROUTER_MODELS: list[str] = [
     #"minimax/minimax-m2:free"
     #"moonshotai/kimi-k2-thinking"
     #"google/gemini-3-pro-preview"
-    "anthropic/claude-opus-4.5"
+    #"anthropic/claude-opus-4.5"
+    {"name": "openai/gpt-5.1", "reasoning_effort": "none"},
+    {"name": "openai/gpt-5.1", "reasoning_effort": "minimal"},
+    {"name": "openai/gpt-5.1", "reasoning_effort": "low"},
+    {"name": "openai/gpt-5.1", "reasoning_effort": "medium"},
+    {"name": "openai/gpt-5.1", "reasoning_effort": "high"},
 ]
 
 # Endpoints to run via a custom inference endpoint (configured in endpoint_model.yaml)
@@ -72,7 +83,8 @@ def build_litellm_command(
     ]
 
     command: list[str] = [
-        "lighteval",
+        sys.executable,
+        "run_eval.py",
         "endpoint",
         "litellm",
         ",".join(provider_params),
@@ -92,7 +104,8 @@ def build_inference_provider_command(model_name: str, max_samples: int | None) -
     ]
 
     command: list[str] = [
-        "lighteval",
+        sys.executable,
+        "run_eval.py",
         "endpoint",
         "inference-providers",
         ",".join(provider_params),
@@ -118,9 +131,23 @@ def main(argv: list[str]) -> int:
     debug_max_samples = 2 if args.debug else None
     debug_concurrent_requests = 1 if args.debug else CONCURRENT_REQUESTS
 
-    for model_name in OPENROUTER_MODELS:
+    for model_config in OPENROUTER_MODELS:
+        if isinstance(model_config, dict):
+            model_name = model_config["name"]
+            reasoning_effort = model_config.get("reasoning_effort")
+        else:
+            model_name = model_config
+            reasoning_effort = None
+
+        display_name = model_name
+        if reasoning_effort and reasoning_effort != "default":
+            # Append reasoning effort to the model name.
+            # run_eval.py will parse this suffix, strip it to get the real model name,
+            # and inject the reasoning_effort parameter into the litellm call.
+            display_name = f"{model_name}-{reasoning_effort}"
+
         cmd = build_litellm_command(
-            model_name=model_name,
+            model_name=display_name,
             concurrent_requests=debug_concurrent_requests,
             max_samples=debug_max_samples,
         )
