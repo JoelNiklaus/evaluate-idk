@@ -362,9 +362,9 @@ if plt is not None:
     lexam_models = [
         ("gemini-3-pro-preview", "Gemini 3 Pro"),
         ("gpt-5", "GPT-5"),
-        ("claude-opus-4.5", "Claude Opus 4.5"),
-        ("claude-sonnet-4.5", "Claude Sonnet 4.5"),
+        ("mistral-large-2512", "Mistral Large 2512"),
         ("glm-4.6", "GLM-4.6"),
+        ("qwen3-max", "Qwen3 Max"),
     ]
     
     create_chart(gpqa_rows, "GPQA Diamond", "score_drop_barchart_gpqa.png", gpqa_models)

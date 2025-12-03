@@ -26,11 +26,13 @@ OPENROUTER_MODELS: list[Union[str, ModelConfig]] = [
     #"moonshotai/kimi-k2-thinking"
     #"google/gemini-3-pro-preview"
     #"anthropic/claude-opus-4.5"
-    {"name": "openai/gpt-5.1", "reasoning_effort": "none"},
-    {"name": "openai/gpt-5.1", "reasoning_effort": "minimal"},
-    {"name": "openai/gpt-5.1", "reasoning_effort": "low"},
-    {"name": "openai/gpt-5.1", "reasoning_effort": "medium"},
-    {"name": "openai/gpt-5.1", "reasoning_effort": "high"},
+    #"prime-intellect/intellect-3",
+    "mistralai/mistral-large-2512",
+    #{"name": "openai/gpt-5.1", "reasoning_effort": "none"},
+    #{"name": "openai/gpt-5.1", "reasoning_effort": "minimal"},
+    #{"name": "openai/gpt-5.1", "reasoning_effort": "low"},
+    #{"name": "openai/gpt-5.1", "reasoning_effort": "medium"},
+    #{"name": "openai/gpt-5.1", "reasoning_effort": "high"},
 ]
 
 # Endpoints to run via a custom inference endpoint (configured in endpoint_model.yaml)
