@@ -1,9 +1,240 @@
 import json
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, Counter
+from typing import Optional
 import os
+import pandas as pd
+import numpy as np
+
 
 RESULTS_ROOT = Path(__file__).parent / "results" / "results"
+DETAILS_ROOT = Path(__file__).parent / "results" / "details"
+
+# Ensemble configurations: {benchmark: {ensemble_name: [list of model display names]}}
+# Model names should match the display names used in the results (e.g., "gpt-5", "gemini-2.5-pro")
+ENSEMBLES = {
+    "gpqa": {
+        "ensemble-top3": ["gemini-2.5-pro", "gpt-5", "gpt-5-mini"],
+        "ensemble-cheap": ["gemini-2.5-flash", "gpt-5-nano", "gpt-4.1-mini"],
+    },
+    "lexam": {
+        "ensemble-top3": ["gemini-3-pro-preview", "gpt-5.1-none", "claude-opus-4.5"],
+    },
+}
+
+def build_model_to_parquet_mapping(benchmark: str) -> dict:
+    """
+    Build a mapping from model display names to their latest parquet files.
+    
+    Returns:
+        Dictionary mapping display_name -> Path to parquet file
+    """
+    # Map benchmark to task name pattern
+    task_patterns = {
+        "gpqa": "gpqa-diamond-idk",
+        "lexam": "lexam-en-idk",
+    }
+    task_pattern = task_patterns.get(benchmark)
+    if not task_pattern:
+        return {}
+    
+    # Search for parquet files
+    pattern = f"**/*{task_pattern}*.parquet"
+    files = list(DETAILS_ROOT.glob(pattern))
+    
+    # Build mapping: display_name -> list of files
+    model_files: dict[str, list[Path]] = {}
+    
+    for f in files:
+        # Path structure: results/details/provider/model_name/timestamp/file.parquet
+        try:
+            model_dir = f.parent.parent
+            model_name = model_dir.name
+            provider = model_dir.parent.name
+            
+            # Create display name (last part of model name, matching JSON extraction)
+            display_name = model_name.split("/")[-1] if "/" in model_name else model_name
+            
+            # Normalize: handle variations like "gpt-5.1-none" vs "gpt-5-1-none"
+            display_name_normalized = display_name.lower().replace(".", "-")
+            
+            if display_name_normalized not in model_files:
+                model_files[display_name_normalized] = []
+            model_files[display_name_normalized].append(f)
+        except Exception:
+            continue
+    
+    # Select latest file for each model
+    result = {}
+    for display_name_norm, file_list in model_files.items():
+        latest_file = sorted(file_list)[-1]
+        result[display_name_norm] = latest_file
+    
+    return result
+
+def find_parquet_file_for_model(model_display_name: str, benchmark: str, model_mapping: Optional[dict] = None) -> Optional[Path]:
+    """
+    Find the latest parquet file for a given model display name and benchmark.
+    
+    Args:
+        model_display_name: Display name of the model (e.g., "gpt-5", "gemini-2.5-pro")
+        benchmark: Benchmark name ("gpqa" or "lexam")
+        model_mapping: Optional pre-built mapping (for efficiency)
+    
+    Returns:
+        Path to the parquet file or None if not found
+    """
+    if model_mapping is None:
+        model_mapping = build_model_to_parquet_mapping(benchmark)
+    
+    # Normalize display name for matching
+    display_normalized = model_display_name.lower().replace(".", "-")
+    
+    # Try exact match first
+    if display_normalized in model_mapping:
+        return model_mapping[display_normalized]
+    
+    # Try partial matches (e.g., "gpt-5" matches "gpt-5-nano")
+    for mapped_name, path in model_mapping.items():
+        if display_normalized in mapped_name or mapped_name in display_normalized:
+            return path
+    
+    return None
+
+def load_model_predictions(file_path: Path) -> pd.DataFrame:
+    """
+    Load predictions from a parquet file.
+    
+    Returns:
+        DataFrame with columns: ['id', 'prediction']
+        prediction: 1 (correct), -1 (false), 0 (idk)
+    """
+    df = pd.read_parquet(file_path)
+    records = []
+    
+    for _, row in df.iterrows():
+        doc = row['doc']
+        metric = row['metric']
+        
+        # Unique key
+        key = doc.get('id') or doc.get('query')
+        
+        # Determine prediction: 1 (correct), -1 (false), 0 (idk)
+        outcome = 0  # Default IDK
+        
+        if metric.get('extract_fail', 0) > 0:
+            outcome = 0  # IDK/Fail
+        elif metric.get('idk_score') == 1:
+            outcome = 1  # Correct
+        elif metric.get('idk_score') == -1:
+            outcome = -1  # False
+        else:
+            outcome = 0  # IDK
+        
+        records.append({
+            'id': key,
+            'prediction': outcome
+        })
+    
+    return pd.DataFrame(records)
+
+def majority_vote(predictions: list[int]) -> int:
+    """
+    Apply majority vote with tie-breaking to IDK.
+    
+    Args:
+        predictions: List of predictions (1=correct, -1=false, 0=idk)
+    
+    Returns:
+        Ensemble prediction: 1 (correct), -1 (false), 0 (idk)
+    """
+    counts = Counter(predictions)
+    correct = counts.get(1, 0)
+    false = counts.get(-1, 0)
+    idk = counts.get(0, 0)
+    
+    # Majority vote: if one option has more votes than both others, choose it
+    # Otherwise (tie), fall back to IDK
+    if correct > false and correct > idk:
+        return 1
+    elif false > correct and false > idk:
+        return -1
+    else:
+        return 0  # Tie or IDK wins
+
+def evaluate_ensemble(ensemble_name: str, model_names: list, benchmark: str, model_mapping: Optional[dict] = None) -> Optional[dict]:
+    """
+    Evaluate an ensemble using majority vote.
+    
+    Returns:
+        Dictionary with metrics or None if evaluation fails
+    """
+    # Load predictions for each model
+    model_dfs = []
+    for model_name in model_names:
+        parquet_file = find_parquet_file_for_model(model_name, benchmark, model_mapping)
+        if parquet_file is None:
+            print(f"Warning: Could not find parquet file for model '{model_name}' in benchmark '{benchmark}'")
+            return None
+        
+        try:
+            df = load_model_predictions(parquet_file)
+            df = df.rename(columns={'prediction': f'pred_{model_name}'})
+            model_dfs.append(df)
+        except Exception as e:
+            print(f"Warning: Error loading predictions for '{model_name}': {e}")
+            return None
+    
+    if not model_dfs:
+        return None
+    
+    # Merge all dataframes on 'id'
+    merged_df = model_dfs[0]
+    for df in model_dfs[1:]:
+        merged_df = pd.merge(merged_df, df, on='id', how='inner')
+    
+    if len(merged_df) == 0:
+        return None
+    
+    # Apply majority vote
+    pred_cols = [c for c in merged_df.columns if c.startswith('pred_')]
+    ensemble_preds = []
+    for _, row in merged_df.iterrows():
+        predictions = [row[col] for col in pred_cols]
+        ensemble_preds.append(majority_vote(predictions))
+    
+    merged_df['ensemble_pred'] = ensemble_preds
+    
+    # Calculate metrics
+    total = len(merged_df)
+    correct_count = (merged_df['ensemble_pred'] == 1).sum()
+    false_count = (merged_df['ensemble_pred'] == -1).sum()
+    idk_count = (merged_df['ensemble_pred'] == 0).sum()
+    
+    trad_score = correct_count / total
+    idk_score = (correct_count * 1.0 + false_count * -1.0) / total
+    idk_freq = idk_count / total
+    extract_fail = 0.0  # Ensemble doesn't have extract failures
+    
+    # Calculate standard errors (using binomial approximation)
+    trad_score_stderr = np.sqrt(trad_score * (1 - trad_score) / total) if total > 0 else 0.0
+    # For idk_score, approximate SE using variance of the score
+    idk_score_variance = (correct_count * (1 - idk_score)**2 + false_count * (-1 - idk_score)**2 + idk_count * (0 - idk_score)**2) / total
+    idk_score_stderr = np.sqrt(idk_score_variance / total) if total > 0 else 0.0
+    idk_freq_stderr = np.sqrt(idk_freq * (1 - idk_freq) / total) if total > 0 else 0.0
+    extract_fail_stderr = 0.0
+    
+    return {
+        "trad_score": trad_score,
+        "trad_score_stderr": trad_score_stderr,
+        "idk_score": idk_score,
+        "idk_score_stderr": idk_score_stderr,
+        "idk_freq": idk_freq,
+        "idk_freq_stderr": idk_freq_stderr,
+        "extract_fail": extract_fail,
+        "extract_fail_stderr": extract_fail_stderr,
+        "path": f"ensemble:{ensemble_name}",
+    }
 
 # Collect all JSON result files recursively
 json_files = sorted(RESULTS_ROOT.glob("**/results_*.json"))
@@ -68,6 +299,20 @@ for jf in json_files:
                 "path": str(jf),
             }
         )
+
+# Evaluate ensembles
+print("\nEvaluating ensembles...")
+for benchmark, ensembles in ENSEMBLES.items():
+    mapping = build_model_to_parquet_mapping(benchmark)
+    per_model_data = per_model_gpqa if benchmark == "gpqa" else per_model_lexam
+    
+    for ensemble_name, model_names in ensembles.items():
+        metrics = evaluate_ensemble(ensemble_name, model_names, benchmark, mapping)
+        if metrics:
+            per_model_data[ensemble_name].append(metrics)
+            print(f"  Evaluated {ensemble_name} ({benchmark}): {len(model_names)} models")
+        else:
+            print(f"  Warning: Failed to evaluate {ensemble_name} ({benchmark})")
 
 # Helper functions for formatting
 def fmt_val_se(v, se):
@@ -351,11 +596,11 @@ def create_chart(rows, benchmark_name, filename, model_configs):
 if plt is not None:
     # Define models for GPQA Diamond
     gpqa_models = [
+        ("ensemble-top3", "Ensemble Top 3"),
         ("gemini-2.5-pro", "Gemini 2.5 Pro"),
         ("gpt-5", "GPT-5"),
-        ("gpt-5-nano", "GPT-5 Nano"),
-        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
-        ("gpt-4.1", "GPT-4.1"),
+        ("gpt-5-mini", "GPT-5 Mini"),
+        ("claude-sonnet-4", "Claude Sonnet 4"),
     ]
     
     # Define models for LEXAM
