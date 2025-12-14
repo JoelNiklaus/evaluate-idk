@@ -180,6 +180,32 @@ def gpqa_diamond_idk_prompt(line: dict, task_name: str) -> Doc:
         instruction=instruction,
     )
 
+def idk_eval_prompt(sample, task_name: str = None) -> Doc:
+    """
+    Mixed MCQA benchmark (MMLU-Pro + LEXam + MedXpertQA),
+    normalized to k=4 answer choices.
+    """
+
+    question_text = sample["question"].strip()
+
+    choices = sample[f"options_{NUM_CHOICES-1}"]           # list[str]
+    gold_index = sample[f"answer_index_{NUM_CHOICES-1}"]   # int
+
+    assert 0 <= gold_index < len(choices)
+
+    shuffled_choices, new_gold_index = shuffle_choices(choices, gold_index)
+    choices_str = build_choices_string(shuffled_choices)
+
+    return Doc(
+        task_name=task_name,
+        query=PROMPT_TEMPLATE.format(
+            question_text=question_text,
+            choices_str=choices_str,
+        ),
+        choices=LETTER_INDICES[:NUM_CHOICES],  # A–E
+        gold_index=new_gold_index,
+    )
+
 
 # -----------------------------
 # Custom metrics
@@ -398,15 +424,28 @@ gpqa_diamond_idk_task = LightevalTaskConfig(
     stop_sequence=STOP_SEQUENCES,
 )
 
+idk_eval_task = LightevalTaskConfig(
+    name="idk-eval",
+    prompt_function=idk_eval_prompt,
+    hf_repo="CatLaugh/idk_eval",
+    hf_subset=None,
+    hf_avail_splits=["test"],
+    evaluation_splits=["test"],
+    few_shots_split=None,
+    few_shots_select=None,
+    metrics=[idk_grouped_metrics],
+    suite=["community"],
+    generation_size=GENERATION_SIZE,
+    stop_sequence=STOP_SEQUENCES,
+)
+
 # Export table for discovery
-TASKS_TABLE = [lexam_idk_task, gpqa_diamond_idk_task]
+TASKS_TABLE = [
+    lexam_idk_task,
+    gpqa_diamond_idk_task,
+    idk_eval_task,
+]
 
 if __name__ == "__main__":
     print([t.name for t in TASKS_TABLE])
     print(len(TASKS_TABLE))
-
-
-
-
-
-
