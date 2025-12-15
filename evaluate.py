@@ -13,26 +13,12 @@ class ModelConfig(TypedDict):
 
 # Models to run via OpenRouter using the litellm adapter.
 OPENROUTER_MODELS: list[Union[str, ModelConfig]] = [
-    #"anthropic/claude-sonnet-4.5",
-    #"openai/gpt-5",
-    #"z-ai/glm-4.6",
-    #"openai/gpt-5-mini",
-    #"openai/gpt-5-nano",
-    #"x-ai/grok-4-fast",
-    #"google/gemini-2.5-pro",
-    #"google/gemini-2.5-flash",
-    #"qwen/qwen3-max",
-    #"minimax/minimax-m2:free"
-    #"moonshotai/kimi-k2-thinking"
-    #"google/gemini-3-pro-preview"
-    #"anthropic/claude-opus-4.5"
     #"prime-intellect/intellect-3",
-    "mistralai/mistral-large-2512",
-    #{"name": "openai/gpt-5.1", "reasoning_effort": "none"},
-    #{"name": "openai/gpt-5.1", "reasoning_effort": "minimal"},
-    #{"name": "openai/gpt-5.1", "reasoning_effort": "low"},
-    #{"name": "openai/gpt-5.1", "reasoning_effort": "medium"},
-    #{"name": "openai/gpt-5.1", "reasoning_effort": "high"},
+    #"mistralai/mistral-large-2512",
+    #"openai/gpt-5.2",
+    #"google/gemini-3-pro-preview",
+    #"moonshotai/kimi-k2-thinking"
+    #"anthropic/claude-sonnet-4.5",
 ]
 
 # Endpoints to run via a custom inference endpoint (configured in endpoint_model.yaml)
