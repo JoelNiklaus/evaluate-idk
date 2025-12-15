@@ -18,7 +18,7 @@ ENSEMBLES = {
         "ensemble-cheap": ["gemini-2.5-flash", "gpt-5-nano", "gpt-4.1-mini"],
     },
     "lexam": {
-        "ensemble-top3": ["gemini-3-pro-preview", "gpt-5.1-none", "claude-opus-4.5"],
+        "ensemble-top3": ["gemini-3-pro-preview", "gpt-5.2", "claude-sonnet-4.5"],
     },
 }
 
