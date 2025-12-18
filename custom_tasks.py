@@ -214,6 +214,8 @@ def idk_eval_prompt(sample, task_name: str = None) -> Doc:
 def extract_letter_fallback(pred: str) -> str | None:
     """Fallback extractor for a single-letter choice when regex extraction fails.
 
+    Supports choices A–K (up to 11 options).
+
     Heuristics (in order):
       1) LEXam format: ###X###
       2) LaTeX boxed forms anywhere: $\boxed{X}$, \boxed{X}, boxed(X)
@@ -224,44 +226,59 @@ def extract_letter_fallback(pred: str) -> str | None:
     if not pred:
         return None
 
+    # Allowed option letters (A–K)
+    LETTERS = "A-K"
+
     # 1) LEXam format: ###X### (extract last occurrence)
-    matches = re.findall(r"###([ABCDE])###", pred)
+    matches = re.findall(rf"###([{LETTERS}])###", pred, flags=re.IGNORECASE)
     if matches:
         return matches[-1].upper()
 
     # 2) LaTeX boxed forms anywhere in the output
-    #    Accept variants: $\boxed{E}$, \boxed{E}, boxed(E), boxed{E}, and $\boxed{\text{E}}$
     boxed_patterns = [
-        # \boxed{E} with optional surrounding $ ... $
-        r"\$?\\boxed\s*\{\s*([A-E])\s*\}\$?",
-        # \boxed{\text{E}} with optional spaces and optional surrounding $ ... $
-        r"\$?\\boxed\s*\{\s*\\text\s*\{\s*([A-E])\s*\}\s*\}\$?",
-        # \boxed{\mathrm{E}} and \boxed{\mathbf{E}} common variants
-        r"\$?\\boxed\s*\{\s*\\mathrm\s*\{\s*([A-E])\s*\}\s*\}\$?",
-        r"\$?\\boxed\s*\{\s*\\mathbf\s*\{\s*([A-E])\s*\}\s*\}\$?",
-        # plain 'boxed(E)' or 'boxed{E}' without backslash
-        r"\bboxed\s*\(\s*([A-E])\s*\)",
-        r"\bboxed\s*\{\s*([A-E])\s*\}",
+        # \boxed{X} with optional surrounding $ ... $
+        rf"\$?\\boxed\s*\{{\s*([{LETTERS}])\s*\}}\$?",
+        # \boxed{\text{X}}
+        rf"\$?\\boxed\s*\{{\s*\\text\s*\{{\s*([{LETTERS}])\s*\}}\s*\}}\$?",
+        # \boxed{\mathrm{X}} or \boxed{\mathbf{X}}
+        rf"\$?\\boxed\s*\{{\s*\\(?:mathrm|mathbf)\s*\{{\s*([{LETTERS}])\s*\}}\s*\}}\$?",
+        # plain boxed(X) or boxed{X} (no backslash)
+        rf"\bboxed\s*\(\s*([{LETTERS}])\s*\)",
+        rf"\bboxed\s*\{{\s*([{LETTERS}])\s*\}}",
     ]
+
     for pat in boxed_patterns:
         m = re.search(pat, pred, re.IGNORECASE)
         if m:
             return m.group(1).upper()
 
-    # 3) Strict format if present anywhere
-    strict = re.search(r"\banswer\s*[:\-]?\s*([A-E])\b", pred, re.IGNORECASE)
+    # 3) Strict "Answer: X"
+    strict = re.search(
+        rf"\banswer\s*[:\-]?\s*([{LETTERS}])\b",
+        pred,
+        re.IGNORECASE,
+    )
     if strict:
         return strict.group(1).upper()
 
+    # Only look at the tail for looser patterns
     tail = pred[-200:]
 
-    # 4) "final answer: X"
-    m = re.search(r"\bfinal\s+answer\s*[:\-]?\s*([A-E])\b", tail, re.IGNORECASE)
+    # 4) "Final answer: X"
+    m = re.search(
+        rf"\bfinal\s+answer\s*[:\-]?\s*([{LETTERS}])\b",
+        tail,
+        re.IGNORECASE,
+    )
     if m:
         return m.group(1).upper()
 
-    # 5) "option X" or "choice X"
-    m = re.search(r"\b(?:option|choice)\s*([A-E])\b", tail, re.IGNORECASE)
+    # 5) "Option X" or "Choice X"
+    m = re.search(
+        rf"\b(?:option|choice)\s*([{LETTERS}])\b",
+        tail,
+        re.IGNORECASE,
+    )
     if m:
         return m.group(1).upper()
 
