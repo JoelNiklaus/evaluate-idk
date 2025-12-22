@@ -18,7 +18,7 @@ ENSEMBLES = {
         "ensemble-cheap": ["gemini-2.5-flash", "gpt-5-nano", "gpt-4.1-mini"],
     },
     "lexam": {
-        "ensemble-top3": ["gemini-3-pro-preview", "gpt-5.2", "claude-sonnet-4.5"],
+        "ensemble-top3": ["gpt-5.2", "gemini-3-pro-preview", "gemini-3-flash-preview"],
     },
 }
 
@@ -605,14 +605,14 @@ if plt is not None:
     
     # Define models for LEXAM
     lexam_models = [
+        ("ensemble-top3", "Ensemble Top 3"),
         ("gpt-5.2", "GPT-5.2"),
         ("gemini-3-pro-preview", "Gemini 3 Pro"),
-        ("claude-sonnet-4.5", "Claude Sonnet 4.5"),
-        ("mistral-large-2512", "Mistral Large 3"),
-        ("intellect-3", "Prime Intellect 3"),
+        ("gemini-3-flash-preview", "Gemini 3 Flash"),
+        ("mistral-large-2512", "Mistral Large 2512"),
     ]
     
     create_chart(gpqa_rows, "GPQA Diamond", "score_drop_barchart_gpqa.png", gpqa_models)
-    create_chart(lexam_rows, "LEXAM", "score_drop_barchart_lexam.png", lexam_models)
+    create_chart(lexam_rows, "LEXam English", "score_drop_barchart_lexam.png", lexam_models)
 else:
     print("matplotlib not available; skipping chart generation.")

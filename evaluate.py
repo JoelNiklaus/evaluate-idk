@@ -19,6 +19,7 @@ OPENROUTER_MODELS: list[Union[str, ModelConfig]] = [
     #"google/gemini-3-pro-preview",
     #"moonshotai/kimi-k2-thinking"
     #"anthropic/claude-sonnet-4.5",
+    #"google/gemini-3-flash-preview",
 ]
 
 # Endpoints to run via a custom inference endpoint (configured in endpoint_model.yaml)
