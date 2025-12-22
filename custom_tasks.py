@@ -180,6 +180,32 @@ def gpqa_diamond_idk_prompt(line: dict, task_name: str) -> Doc:
         instruction=instruction,
     )
 
+def idk_eval_prompt(sample, task_name: str = None) -> Doc:
+    """
+    Mixed MCQA benchmark (MMLU-Pro + LEXam + MedXpertQA),
+    normalized to k=4 answer choices.
+    """
+
+    question_text = sample["question"].strip()
+
+    choices = sample[f"options_{NUM_CHOICES-1}"]           # list[str]
+    gold_index = sample[f"answer_index_{NUM_CHOICES-1}"]   # int
+
+    assert 0 <= gold_index < len(choices)
+
+    shuffled_choices, new_gold_index = shuffle_choices(choices, gold_index)
+    choices_str = build_choices_string(shuffled_choices)
+
+    return Doc(
+        task_name=task_name,
+        query=PROMPT_TEMPLATE.format(
+            question_text=question_text,
+            choices_str=choices_str,
+        ),
+        choices=LETTER_INDICES[:NUM_CHOICES],  # A–E
+        gold_index=new_gold_index,
+    )
+
 
 # -----------------------------
 # Custom metrics
@@ -187,6 +213,8 @@ def gpqa_diamond_idk_prompt(line: dict, task_name: str) -> Doc:
 
 def extract_letter_fallback(pred: str) -> str | None:
     """Fallback extractor for a single-letter choice when regex extraction fails.
+
+    Supports choices A–K (up to 11 options).
 
     Heuristics (in order):
       1) LEXam format: ###X###
@@ -198,44 +226,59 @@ def extract_letter_fallback(pred: str) -> str | None:
     if not pred:
         return None
 
+    # Allowed option letters (A–K)
+    LETTERS = "A-K"
+
     # 1) LEXam format: ###X### (extract last occurrence)
-    matches = re.findall(r"###([ABCDE])###", pred)
+    matches = re.findall(rf"###([{LETTERS}])###", pred, flags=re.IGNORECASE)
     if matches:
         return matches[-1].upper()
 
     # 2) LaTeX boxed forms anywhere in the output
-    #    Accept variants: $\boxed{E}$, \boxed{E}, boxed(E), boxed{E}, and $\boxed{\text{E}}$
     boxed_patterns = [
-        # \boxed{E} with optional surrounding $ ... $
-        r"\$?\\boxed\s*\{\s*([A-E])\s*\}\$?",
-        # \boxed{\text{E}} with optional spaces and optional surrounding $ ... $
-        r"\$?\\boxed\s*\{\s*\\text\s*\{\s*([A-E])\s*\}\s*\}\$?",
-        # \boxed{\mathrm{E}} and \boxed{\mathbf{E}} common variants
-        r"\$?\\boxed\s*\{\s*\\mathrm\s*\{\s*([A-E])\s*\}\s*\}\$?",
-        r"\$?\\boxed\s*\{\s*\\mathbf\s*\{\s*([A-E])\s*\}\s*\}\$?",
-        # plain 'boxed(E)' or 'boxed{E}' without backslash
-        r"\bboxed\s*\(\s*([A-E])\s*\)",
-        r"\bboxed\s*\{\s*([A-E])\s*\}",
+        # \boxed{X} with optional surrounding $ ... $
+        rf"\$?\\boxed\s*\{{\s*([{LETTERS}])\s*\}}\$?",
+        # \boxed{\text{X}}
+        rf"\$?\\boxed\s*\{{\s*\\text\s*\{{\s*([{LETTERS}])\s*\}}\s*\}}\$?",
+        # \boxed{\mathrm{X}} or \boxed{\mathbf{X}}
+        rf"\$?\\boxed\s*\{{\s*\\(?:mathrm|mathbf)\s*\{{\s*([{LETTERS}])\s*\}}\s*\}}\$?",
+        # plain boxed(X) or boxed{X} (no backslash)
+        rf"\bboxed\s*\(\s*([{LETTERS}])\s*\)",
+        rf"\bboxed\s*\{{\s*([{LETTERS}])\s*\}}",
     ]
+
     for pat in boxed_patterns:
         m = re.search(pat, pred, re.IGNORECASE)
         if m:
             return m.group(1).upper()
 
-    # 3) Strict format if present anywhere
-    strict = re.search(r"\banswer\s*[:\-]?\s*([A-E])\b", pred, re.IGNORECASE)
+    # 3) Strict "Answer: X"
+    strict = re.search(
+        rf"\banswer\s*[:\-]?\s*([{LETTERS}])\b",
+        pred,
+        re.IGNORECASE,
+    )
     if strict:
         return strict.group(1).upper()
 
+    # Only look at the tail for looser patterns
     tail = pred[-200:]
 
-    # 4) "final answer: X"
-    m = re.search(r"\bfinal\s+answer\s*[:\-]?\s*([A-E])\b", tail, re.IGNORECASE)
+    # 4) "Final answer: X"
+    m = re.search(
+        rf"\bfinal\s+answer\s*[:\-]?\s*([{LETTERS}])\b",
+        tail,
+        re.IGNORECASE,
+    )
     if m:
         return m.group(1).upper()
 
-    # 5) "option X" or "choice X"
-    m = re.search(r"\b(?:option|choice)\s*([A-E])\b", tail, re.IGNORECASE)
+    # 5) "Option X" or "Choice X"
+    m = re.search(
+        rf"\b(?:option|choice)\s*([{LETTERS}])\b",
+        tail,
+        re.IGNORECASE,
+    )
     if m:
         return m.group(1).upper()
 
@@ -398,15 +441,28 @@ gpqa_diamond_idk_task = LightevalTaskConfig(
     stop_sequence=STOP_SEQUENCES,
 )
 
+idk_eval_task = LightevalTaskConfig(
+    name="idk-eval",
+    prompt_function=idk_eval_prompt,
+    hf_repo="CatLaugh/idk_eval",
+    hf_subset=None,
+    hf_avail_splits=["test"],
+    evaluation_splits=["test"],
+    few_shots_split=None,
+    few_shots_select=None,
+    metrics=[idk_grouped_metrics],
+    suite=["community"],
+    generation_size=GENERATION_SIZE,
+    stop_sequence=STOP_SEQUENCES,
+)
+
 # Export table for discovery
-TASKS_TABLE = [lexam_idk_task, gpqa_diamond_idk_task]
+TASKS_TABLE = [
+    lexam_idk_task,
+    gpqa_diamond_idk_task,
+    idk_eval_task,
+]
 
 if __name__ == "__main__":
     print([t.name for t in TASKS_TABLE])
     print(len(TASKS_TABLE))
-
-
-
-
-
-
